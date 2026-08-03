@@ -65,7 +65,7 @@ class OllamaClient:
             "stream": False,
             "options": {
                 "temperature": 0.0,
-                "num_predict": 512,
+                "num_predict": 256,
             },
         }
         

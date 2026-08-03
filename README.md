@@ -89,6 +89,11 @@ sudo systemctl start jetson-pichick
 journalctl -u jetson-pichick -f
 ```
 
+`install.sh` won't overwrite an existing `/etc/jchick/jchick.env` on
+re-deploy. To push updated defaults from `.env.example` to an installed
+device, run `sudo INSTALL_UPDATE_ENV=1 bash scripts/install.sh` (backs
+up the old file to `jchick.env.bak`). See [`docs/SETUP.md`](docs/SETUP.md).
+
 On any LAN host with the `nats` CLI:
 
 ```bash

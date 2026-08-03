@@ -388,7 +388,7 @@ update). What it does, in order:
    `__pycache__`, etc.), then `chown -R jchick:jchick /opt/jchick`.
 6. Seeds `/etc/jchick/jchick.env` from `.env.example` if not present
    (mode 0640, owner `root:jchick`). Re-runs do **not** clobber an
-   existing env file.
+   existing env file unless `INSTALL_UPDATE_ENV=1` is set (see below).
 7. `python3 -m venv /opt/jchick/.venv`, then
    `pip install -e /opt/jchick` (pulls `httpx`, `nats-py`, `pillow`,
    `pyyaml`).
@@ -400,6 +400,24 @@ update). What it does, in order:
 
 It does **not**: install or configure Ollama (already done in step 1
 and 4), pull models (step 2), or start the service (step 7).
+
+### Updating env config on an already-installed device
+
+By default `install.sh` leaves `/etc/jchick/jchick.env` alone once it
+exists — so a code re-deploy can't silently overwrite hand-edited
+per-device values like `JCHICK_CAPTURE_DEVICE=/dev/video1`.
+
+When you've changed defaults in `.env.example` and want to push them to
+an installed device, opt in with `INSTALL_UPDATE_ENV=1`:
+
+```bash
+ssh pichick@192.168.0.18 'sudo INSTALL_UPDATE_ENV=1 \
+  bash /tmp/jetson-pichick/scripts/install.sh'
+```
+
+This backs up the existing file to `/etc/jchick/jchick.env.bak` and
+re-seeds from `.env.example`. Per-device overrides then need to be
+re-applied by hand (`sudo vi /etc/jchick/jchick.env`).
 
 ---
 
@@ -769,7 +787,7 @@ Equivalent jchick env in `/etc/jchick/jchick.env`:
 ```
 NATS_URL=nats://192.168.0.76:4222     # control-Pi / dedicated broker
 OLLAMA_URL=http://127.0.0.1:11434     # local on the Jetson
-JCHICK_GATE_MODEL=moondream:1.8b      # consider llava-phi3:3.8b for robustness
+JCHICK_GATE_MODEL=llava-phi3:3.8b      # more robust than moondream on featureless frames (Finding 10)
 JCHICK_DETAIL_MODEL=llava:7b
 JCHICK_CAPTURE_SOURCE=synthetic       # → v4l2 once the camera lands at the coop
 ```

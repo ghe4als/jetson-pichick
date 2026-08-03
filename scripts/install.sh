@@ -57,13 +57,21 @@ rsync -a --delete \
   "$REPO_DIR"/ "$INSTALL_DIR"/
 chown -R "$USER:$GROUP" "$INSTALL_DIR"
 
-echo "==> env: seeding $ENV_DIR/jchick.env if missing"
+echo "==> env: seeding $ENV_DIR/jchick.env"
 if [[ ! -f "$ENV_DIR/jchick.env" ]]; then
   install -m 0640 -o root -g "$GROUP" "$REPO_DIR/.env.example" \
     "$ENV_DIR/jchick.env"
   echo "    created (mode 0640 root:$GROUP). Edit before starting."
+elif [[ "${INSTALL_UPDATE_ENV:-0}" == "1" ]]; then
+  # Opt-in: re-seed from .env.example. Backs up the old file first so a
+  # fat-fingered re-run can be undone. Use when you've changed defaults in
+  # the repo and want to push them to an already-installed device.
+  cp -a "$ENV_DIR/jchick.env" "$ENV_DIR/jchick.env.bak"
+  install -m 0640 -o root -g "$GROUP" "$REPO_DIR/.env.example" \
+    "$ENV_DIR/jchick.env"
+  echo "    overwritten from .env.example (backup at jchick.env.bak)."
 else
-  echo "    already present, leaving alone."
+  echo "    already present, leaving alone. (set INSTALL_UPDATE_ENV=1 to overwrite)"
 fi
 
 echo "==> venv: building $INSTALL_DIR/.venv"
