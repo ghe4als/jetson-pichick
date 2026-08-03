@@ -787,7 +787,28 @@ Equivalent jchick env in `/etc/jchick/jchick.env`:
 ```
 NATS_URL=nats://192.168.0.76:4222     # control-Pi / dedicated broker
 OLLAMA_URL=http://127.0.0.1:11434     # local on the Jetson
-JCHICK_GATE_MODEL=llava-phi3:3.8b      # more robust than moondream on featureless frames (Finding 10)
-JCHICK_DETAIL_MODEL=llava:7b
-JCHICK_CAPTURE_SOURCE=synthetic       # → v4l2 once the camera lands at the coop
+JCHICK_GATE_MODEL=llava-phi3:3.8b      # single model for both roles (see below)
+JCHICK_DETAIL_MODEL=llava-phi3:3.8b
+JCHICK_CAPTURE_SOURCE=v4l2             # USB UVC camera at /dev/video0
+JCHICK_DIFF_THRESHOLD=0.008            # lowered from 0.015 for real camera noise
 ```
+
+### Why llava-phi3:3.8b for both gate and detail
+
+The original two-model cascade (moondream:1.8b gate + llava:7b detail)
+doesn't work on the Orin Nano's 7.5GB unified memory in practice:
+
+- **moondream:1.8b** returns malformed JSON on out-of-distribution frames
+  (bounding boxes instead of the requested schema, or infinite list loops
+  until `num_predict` truncates — see Finding 10). It ignores `format=json`.
+- **llava:7b** (4.7GB VRAM) cannot be loaded alongside any other model;
+  the model-swap stall causes Ollama HTTP 500 ("model runner has
+  unexpectedly stopped... resource limitations").
+
+Using `llava-phi3:3.8b` (2.9GB on disk, 3.9GB in VRAM) for both roles
+eliminates the swap, fits comfortably in RAM, and reliably follows the
+JSON schema. We lose the "cheap gate" optimization (every kept frame
+runs the 3.8B model instead of a 1.8B gate), but the cascade was
+broken anyway. Revisit a two-model setup if a smaller JSON-reliable
+gate model becomes available, or if Ollama adds graceful swap-under-
+memory-pressure.
