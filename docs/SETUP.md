@@ -364,6 +364,38 @@ vision path.
 
 ---
 
+## Step 4g — Add swap (required for model stability)
+
+The Orin Nano dev kit ships with **zero swap** and only 7.5 GB of
+unified CPU+GPU memory. A 3.9 GB model (`llava-phi3:3.8b` in VRAM)
+plus the OS plus jchick plus capture leaves under 200 MB free. Any
+transient allocation spike triggers the kernel OOM killer, which
+kills `llama-server` — Ollama crashes with HTTP 500, restarts, takes
+~20 s to reload the model, and jchick emits a flurry of
+`alert.ollama` events during the gap. See Finding 11 for the full
+trace.
+
+A 4 GB swap file gives the OS a safety valve. This is **required**,
+not optional, when running any model larger than ~2 GB on this box.
+
+```bash
+ssh pichick@192.168.0.18 '
+  sudo fallocate -l 4G /swapfile &&
+  sudo chmod 600 /swapfile &&
+  sudo mkswap /swapfile &&
+  sudo swapon /swapfile &&
+  echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab > /dev/null
+  swapon --show'
+# NAME      TYPE SIZE USED PRIO
+# /swapfile file   4G   0B   -2
+```
+
+NVMe is fast enough that the occasional swap page fault doesn't
+measurably hurt inference latency; in steady state swap stays near
+zero and it only absorbs the spikes that would otherwise kill Ollama.
+
+---
+
 ## Step 5 — Push and install jetson-pichick
 
 ```bash
@@ -727,6 +759,40 @@ This is a **moondream-1.8b** quality issue on out-of-distribution input,
 not a pipeline bug. On real coop frames the model behaves better.
 `llava-phi3:3.8b` is more robust against this and is a worth a try as
 the gate model on real frames.
+
+### Finding 11: OOM killer kills llama-server without swap
+
+The Orin Nano dev kit has 7.5 GB unified memory and **no swap
+configured by default**. With `llava-phi3:3.8b` loaded (3.9 GB VRAM,
+~7 GB RSS for `llama-server` including CUDA mappings), free RAM drops
+under 200 MB. Any transient allocation — ffmpeg capturing a frame,
+tegrastats, a kernel buffer grant — can push the box over the edge.
+
+The kernel OOM killer targets `llama-server` (biggest RSS) and kills
+it:
+
+```
+[ 1357.498772] gmain invoked oom-killer: ...
+[ 1357.500094] Out of memory: Killed process 14824 (llama-server)
+  total-vm:46252572kB, anon-rss:7028168kB
+```
+
+From jchick's side this looks like:
+1. `HTTP 500: model runner has unexpectedly stopped` (the kill),
+2. ~3× `ollama transport error: All connection attempts failed`
+   (Ollama restarting, ~20 s model reload),
+3. then `200 OK` once the model is back in VRAM.
+
+Each cycle emits 1× `alert.ollama` (HTTP 500) + 3× `alert.ollama`
+(transport error) to NATS. The service self-heals every time
+(Finding 4 applies), but the noise is constant under memory
+pressure.
+
+**Fix: add a 4 GB swap file** (Step 4g). With swap in place, the
+spikes page out instead of killing the runner. In steady state swap
+usage stays near zero; it only absorbs the transients. Verified: 60 s
+of clean operation (4× 200 OK, zero errors) immediately after adding
+swap, where previously every few minutes produced an OOM-kill cycle.
 
 ---
 
