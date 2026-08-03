@@ -1,0 +1,25 @@
+[Unit]
+Description=jetson-pichick: continuous-capture vision pipeline
+After=network-online.target ollama.service
+Wants=network-online.target ollama.service
+
+[Service]
+Type=simple
+User=jchick
+Group=jchick
+EnvironmentFile=/etc/jchick/jchick.env
+ExecStart=/opt/jchick/.venv/bin/python -m jchick
+Restart=on-failure
+RestartSec=5
+
+# light hardening; we still need /dev/video* for v4l2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/jchick /run/jchick
+DeviceAllow=/dev/video0 rw
+DeviceAllow=/dev/video1 rw
+
+[Install]
+WantedBy=multi-user.target

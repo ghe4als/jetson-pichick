@@ -1,0 +1,46 @@
+[Unit]
+Description=Ollama (containerized via dustynv/ollama for Jetson sm_87)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+# This unit replaces the stock /etc/systemd/system/ollama.service when
+# the host is a Jetson and we need an sm_87-aware Ollama build. The
+# stock systemd unit installs Ollama as a native binary, but stock
+# Ollama for arm64 is not compiled for compute capability 8.7 (Orin).
+# dustynv/ollama is.
+#
+# To switch:
+#   sudo systemctl stop ollama
+#   sudo systemctl disable ollama
+#   sudo cp /opt/jchick/assets/ollama-jetson.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ollama-jetson
+#
+# Models persist on the host at /usr/share/ollama/.ollama (default
+# location used by the stock binary). Mounting that into the container
+# means switching back to the stock binary later doesn't lose models.
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=90
+TimeoutStopSec=30
+
+ExecStartPre=-/usr/bin/docker stop ollama-jetson
+ExecStartPre=-/usr/bin/docker rm ollama-jetson
+
+ExecStart=/usr/bin/docker run --rm --name ollama-jetson \
+  --runtime=nvidia \
+  --network host \
+  -e OLLAMA_HOST=0.0.0.0:11434 \
+  -e OLLAMA_KEEP_ALIVE=5m \
+  -v /usr/share/ollama/.ollama:/root/.ollama \
+  dustynv/ollama:r36.4-cu129-24.04 \
+  ollama serve
+
+ExecStop=/usr/bin/docker stop ollama-jetson
+
+[Install]
+WantedBy=multi-user.target
