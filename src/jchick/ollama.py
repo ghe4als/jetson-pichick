@@ -66,6 +66,7 @@ class OllamaClient:
             "options": {
                 "temperature": 0.0,
                 "num_predict": 256,
+                "num_ctx": 2048,
             },
         }
         
