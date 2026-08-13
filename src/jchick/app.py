@@ -101,6 +101,8 @@ class App:
                 if self._stop.is_set():
                     break
                 self._frames_seen += 1
+                if self._mjpeg is not None:
+                    self._mjpeg.update_last_frame(jpeg)
                 keep, score = self._diff.evaluate(jpeg)
                 if not keep:
                     log.debug("diff gate skipped frame (score=%.4f)", score)

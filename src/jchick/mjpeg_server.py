@@ -67,6 +67,17 @@ class MJPEGServer:
         self._server: asyncio.base_server.Server | None = None
         self._running = False
         self._last: LastResult = LastResult()
+        self._last_jpeg: bytes | None = None
+
+    def update_last_frame(self, jpeg: bytes) -> None:
+        """Called by the inference loop on every captured frame (before diff gate).
+
+        The stream loop reads self._last_jpeg. This decouples the stream
+        from the single-consumer async generator on self._source.frames()
+        — only the inference loop iterates that generator; the MJPEG
+        server re-serves whatever the loop most recently saw.
+        """
+        self._last_jpeg = jpeg
 
     def update_last_result(self, result: Any, *, diff_score: float) -> None:
         """Called by the inference loop after each cascade.run().
@@ -100,8 +111,7 @@ class MJPEGServer:
 
     async def start(self) -> None:
         """Start the HTTP server on configured port."""
-        loop = asyncio.get_running_loop()
-        self._server = await loop.create_server(
+        self._server = await asyncio.start_server(
             self._handler,
             host="0.0.0.0",
             port=self._port,
@@ -196,22 +206,37 @@ class MJPEGServer:
 
     async def _serve_viewer(self, writer: asyncio.StreamWriter) -> None:
         """Serve HTML viewer page."""
-        html = self._viewer_html()
+        html = self._viewer_html().encode("utf-8")
         head = (
             b"HTTP/1.1 200 OK\r\n"
             b"Content-Type: text/html; charset=utf-8\r\n"
+            b"Content-Length: " + str(len(html)).encode() + b"\r\n"
             b"Connection: close\r\n"
             b"\r\n"
         )
-        writer.write(head + html.encode("utf-8"))
+        writer.write(head + html)
         await writer.drain()
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
         log.info("Viewer page served")
 
     async def _capture_frames(self) -> AsyncIterator[bytes]:
-        """Yield JPEG frames from capture source at desired FPS, with overlay."""
+        """Yield the most recent JPEG at the stream's own pace, with overlay.
+
+        We do NOT iterate self._source.frames() here — that async generator
+        has a single consumer (the inference loop in app.py). Instead we
+        read self._last_jpeg, which the inference loop updates on every
+        captured frame via update_last_frame(). If no frame has arrived
+        yet, we sleep and retry.
+        """
         period = 1.0 / max(self._cfg.capture_fps, 0.01)
-        async for jpeg, _ts in self._source.frames():
-            yield self._overlay(jpeg)
+        while self._running:
+            jpeg = self._last_jpeg
+            if jpeg is not None:
+                yield self._overlay(jpeg)
             await asyncio.sleep(period)
 
     def _overlay(self, jpeg: bytes) -> bytes:
@@ -259,7 +284,7 @@ class MJPEGServer:
             )
         lines.append(
             f"seen={r.frames_seen} inf={r.frames_inferenced} fired={r.frames_fired}  "
-            f"{self._cfg.capture_source}@{self._cfg.capture_fps:.2ffps}"
+            f"{self._cfg.capture_source}@{self._cfg.capture_fps:.2f}fps"
         )
 
         # Draw semi-transparent bar across the top, then text on top.
@@ -289,6 +314,9 @@ class MJPEGServer:
 
     def _viewer_html(self) -> str:
         """Return HTML viewer page."""
+        # NOTE: do NOT use str.format() here — the CSS contains literal
+        # { } braces that .format() would try to interpret as field names.
+        # Plain .replace() avoids the footgun.
         return """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -350,7 +378,7 @@ class MJPEGServer:
 <body>
     <div class="container">
         <h1>Jetson Picchk Camera</h1>
-        <div class="status">Capturing at {capture_fps} fps | Source: {capture_source}</div>
+        <div class="status">Capturing at __FPS__ fps | Source: __SOURCE__</div>
         <div class="camera-wrapper">
             <img id="camera" src="/stream" alt="Camera stream" style="display:none;">
             <div class="placeholder" id="placeholder">Connecting to camera...</div>
@@ -372,7 +400,6 @@ class MJPEGServer:
         };
     </script>
 </body>
-</html>""".format(
-            capture_fps=self._cfg.capture_fps,
-            capture_source=self._cfg.capture_source,
+</html>""".replace("__FPS__", str(self._cfg.capture_fps)).replace(
+            "__SOURCE__", self._cfg.capture_source
         )
