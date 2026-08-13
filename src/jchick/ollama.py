@@ -21,12 +21,25 @@ log = logging.getLogger(__name__)
 
 
 PROMPT = (
-     'You are a chicken-coop security camera. Reply ONLY with one JSON '
-     'object on a single line, matching this schema. No prose. No code '
-     'fence. No trailing text. No newlines in strings.\n'
-     '{"chickens": <int>, "other_animals": [<lowercase species>], '
+     'You are a chicken-coop security camera analyzing one still frame. '
+     'Reply ONLY with one JSON object on a single line, matching this '
+     'schema. No prose. No code fence. No trailing text. No newlines in '
+     'strings.\n'
+     'Schema: {"chickens": <int>, "other_animals": [<lowercase species>], '
      '"movement": "still"|"calm"|"active", "confidence": <float 0..1>, '
-     '"notes": "<one short sentence>"}'
+     '"notes": "<one short sentence>"}\n'
+     'Rules:\n'
+     '- chickens = number of chickens VISIBLE in the frame. If no chickens '
+     'are visible, use 0. Do not assume chickens are present.\n'
+     '- other_animals = list of other animal species clearly visible in the '
+     'frame. Empty list if none.\n'
+     '- If the frame shows no animals at all, return exactly: '
+     '{"chickens": 0, "other_animals": [], "movement": "still", '
+     '"confidence": 0.9, "notes": "No animals visible."}\n'
+     '- confidence = how sure you are animals are actually present, 0..1. '
+     'Use under 0.5 if unclear, dark, or motion-blurred.\n'
+     '- Do not invent animals. An empty coop is the expected, correct '
+     'answer when no animals are visible.'
 )
 
 

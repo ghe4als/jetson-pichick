@@ -418,9 +418,10 @@ update). What it does, in order:
    `root:root`).
 5. `rsync`'s the repo into `/opt/jchick/` (excluding `.git`, `.venv`,
    `__pycache__`, etc.), then `chown -R jchick:jchick /opt/jchick`.
-6. Seeds `/etc/jchick/jchick.env` from `.env.example` if not present
-   (mode 0640, owner `root:jchick`). Re-runs do **not** clobber an
-   existing env file unless `INSTALL_UPDATE_ENV=1` is set (see below).
+6. (Re)seeds `/etc/jchick/jchick.env` from `.env.example`
+   (mode 0640, owner `root:jchick`). Every run overwrites the env file
+   from `.env.example` — which is the source of truth for runtime
+   config — backing up the previous file to `jchick.env.bak` first.
 7. `python3 -m venv /opt/jchick/.venv`, then
    `pip install -e /opt/jchick` (pulls `httpx`, `nats-py`, `pillow`,
    `pyyaml`).
@@ -435,21 +436,21 @@ and 4), pull models (step 2), or start the service (step 7).
 
 ### Updating env config on an already-installed device
 
-By default `install.sh` leaves `/etc/jchick/jchick.env` alone once it
-exists — so a code re-deploy can't silently overwrite hand-edited
-per-device values like `JCHICK_CAPTURE_DEVICE=/dev/video1`.
-
-When you've changed defaults in `.env.example` and want to push them to
-an installed device, opt in with `INSTALL_UPDATE_ENV=1`:
+`.env.example` in the repo is the source of truth for runtime config.
+Every `install.sh` run overwrites `/etc/jchick/jchick.env` from it
+(backing up the previous file to `jchick.env.bak`). To change a
+device's config, edit `.env.example` in the repo and re-deploy — no
+hand-editing on the box:
 
 ```bash
-ssh pichick@192.168.0.18 'sudo INSTALL_UPDATE_ENV=1 \
-  bash /tmp/jetson-pichick/scripts/install.sh'
+rsync -av --delete --exclude .venv --exclude __pycache__ --exclude .git \
+  ~/code/jetson-pichick/ pichick@192.168.0.18:/tmp/jetson-pichick/
+ssh pichick@192.168.0.18 'sudo bash /tmp/jetson-pichick/scripts/install.sh'
+ssh pichick@192.168.0.18 'sudo systemctl restart jetson-pichick'
 ```
 
-This backs up the existing file to `/etc/jchick/jchick.env.bak` and
-re-seeds from `.env.example`. Per-device overrides then need to be
-re-applied by hand (`sudo vi /etc/jchick/jchick.env`).
+If a push goes wrong, roll back from the Jetson:
+`sudo cp /etc/jchick/jchick.env.bak /etc/jchick/jchick.env && sudo systemctl restart jetson-pichick`.
 
 ---
 
@@ -856,7 +857,7 @@ OLLAMA_URL=http://127.0.0.1:11434     # local on the Jetson
 JCHICK_GATE_MODEL=llava-phi3:3.8b      # single model for both roles (see below)
 JCHICK_DETAIL_MODEL=llava-phi3:3.8b
 JCHICK_CAPTURE_SOURCE=v4l2             # USB UVC camera at /dev/video0
-JCHICK_DIFF_THRESHOLD=0.008            # lowered from 0.015 for real camera noise
+JCHICK_DIFF_THRESHOLD=0.012            # above sensor noise (~0.009), below real motion
 ```
 
 ### Why llava-phi3:3.8b for both gate and detail

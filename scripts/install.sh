@@ -7,9 +7,13 @@
 # What it does:
 #   1. apt-installs runtime deps (python3-venv, ffmpeg)
 #   2. creates the jchick system user and /opt/jchick install dir
-#   3. creates /etc/jchick/jchick.env from .env.example if not present
+#   3. (re)seeds /etc/jchick/jchick.env from .env.example (backs up prior)
 #   4. builds a venv at /opt/jchick/.venv and pip-installs this repo
 #   5. installs and enables the systemd unit
+#
+# .env.example is the source of truth for runtime config. Every run
+# overwrites /etc/jchick/jchick.env from it (with a .bak backup) so config
+# changes ship with a normal install.sh run — no hand-editing on the box.
 #
 # It does NOT install or configure Ollama. That's expected to be already
 # running on this host (loopback or LAN) and pointed to by OLLAMA_URL.
@@ -57,21 +61,20 @@ rsync -a --delete \
   "$REPO_DIR"/ "$INSTALL_DIR"/
 chown -R "$USER:$GROUP" "$INSTALL_DIR"
 
-echo "==> env: seeding $ENV_DIR/jchick.env"
+echo "==> env: seeding $ENV_DIR/jchick.env from .env.example"
 if [[ ! -f "$ENV_DIR/jchick.env" ]]; then
   install -m 0640 -o root -g "$GROUP" "$REPO_DIR/.env.example" \
     "$ENV_DIR/jchick.env"
-  echo "    created (mode 0640 root:$GROUP). Edit before starting."
-elif [[ "${INSTALL_UPDATE_ENV:-0}" == "1" ]]; then
-  # Opt-in: re-seed from .env.example. Backs up the old file first so a
-  # fat-fingered re-run can be undone. Use when you've changed defaults in
-  # the repo and want to push them to an already-installed device.
+  echo "    created (mode 0640 root:$GROUP)."
+else
+  # Always re-seed from .env.example — it is the source of truth for this
+  # device's runtime config. Back up the previous file so a bad push can
+  # be undone. To keep a hand-edited env on a box, don't run install.sh
+  # (or restore from jchick.env.bak afterward).
   cp -a "$ENV_DIR/jchick.env" "$ENV_DIR/jchick.env.bak"
   install -m 0640 -o root -g "$GROUP" "$REPO_DIR/.env.example" \
     "$ENV_DIR/jchick.env"
   echo "    overwritten from .env.example (backup at jchick.env.bak)."
-else
-  echo "    already present, leaving alone. (set INSTALL_UPDATE_ENV=1 to overwrite)"
 fi
 
 echo "==> venv: building $INSTALL_DIR/.venv"

@@ -56,11 +56,17 @@ class Cascade:
 
 
 def _gate_says_interesting(r: VisionResult) -> bool:
-    """Decide whether the gate output is worth a detail-model pass."""
+    """Decide whether the gate output is worth a detail-model pass.
+
+    Fires only when animals are actually detected. We deliberately do NOT
+    fire on movement=="active" alone — the gate model judges motion from a
+    single still frame, which is unreliable and caused false fires on
+    static-but-noisy frames that leaked through the pixel-diff gate. The
+    diff gate upstream is the real motion detector; the gate model's job
+    is to identify what's present, not whether it's moving.
+    """
     if r.chickens > 0:
         return True
     if r.other_animals:
-        return True
-    if r.movement == "active":
         return True
     return False

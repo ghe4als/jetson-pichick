@@ -84,15 +84,14 @@ rsync -av --exclude .venv --exclude __pycache__ \
 # On the Jetson
 ssh pichick@192.168.0.18
 sudo bash /tmp/jetson-pichick/scripts/install.sh
-sudo vi /etc/jchick/jchick.env        # set NATS_URL, OLLAMA_URL, etc
 sudo systemctl start jetson-pichick
 journalctl -u jetson-pichick -f
 ```
 
-`install.sh` won't overwrite an existing `/etc/jchick/jchick.env` on
-re-deploy. To push updated defaults from `.env.example` to an installed
-device, run `sudo INSTALL_UPDATE_ENV=1 bash scripts/install.sh` (backs
-up the old file to `jchick.env.bak`). See [`docs/SETUP.md`](docs/SETUP.md).
+`install.sh` always re-seeds `/etc/jchick/jchick.env` from
+`.env.example` (backing up the previous file to `jchick.env.bak`), so
+config changes ship with a normal deploy — edit `.env.example` in the
+repo, never the file on the box. See [`docs/SETUP.md`](docs/SETUP.md).
 
 On any LAN host with the `nats` CLI:
 
