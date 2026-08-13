@@ -34,15 +34,15 @@ Additional bug in the stale tree: `jchick/app.py:75` references
 startup. Must fix when porting.
 
 ## Status
-Current task: T01 (NOT STARTED)
-Last completed: none
+Current task: T05 (DONE)
+Last completed: T05 (commit: f507efb)
 
 ## Task list
-- [ ] T01 — Port mjpeg_server.py into src/jchick/ with overlay + last-result store   ⬜ TODO
-- [ ] T02 — Add http_port to src/jchick/config.py + JCHICK_HTTP_PORT to .env.example   ⬜ TODO
-- [ ] T03 — Wire MJPEG server into src/jchick/app.py (fix cfg→self._cfg bug)           ⬜ TODO
-- [ ] T04 — Delete stale jchick/ top-level tree                                         ⬜ TODO
-- [ ] T05 — Deploy to Jetson and verify stream in browser                               ⬜ TODO
+- [x] T01 — Port mjpeg_server.py into src/jchick/ with overlay + last-result store   ✅ DONE
+- [x] T02 — Add http_port to src/jchick/config.py + JCHICK_HTTP_PORT to .env.example   ✅ DONE
+- [x] T03 — Wire MJPEG server into src/jchick/app.py (fix cfg→self._cfg bug)           ✅ DONE
+- [x] T04 — Delete stale jchick/ top-level tree                                         ✅ DONE
+- [x] T05 — Deploy to Jetson and verify stream in browser                               ✅ DONE
 
 ## Blocked
 None.
