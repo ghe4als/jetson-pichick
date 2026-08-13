@@ -43,6 +43,9 @@ class Config:
     heartbeat_seconds: float
     tegrastats_seconds: float
 
+    # web viewer
+    http_port: int            # 0 = disabled; 8090 = default stream port
+
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
         e = env if env is not None else os.environ
@@ -67,6 +70,7 @@ class Config:
             host=e.get("JCHICK_HOST", socket.gethostname()),
             heartbeat_seconds=float(e.get("JCHICK_HEARTBEAT_SECONDS", "300")),
             tegrastats_seconds=float(e.get("JCHICK_TEGRASTATS_SECONDS", "60")),
+            http_port=int(e.get("JCHICK_HTTP_PORT", "0")),
         )
 
     def subject(self, suffix: str) -> str:
