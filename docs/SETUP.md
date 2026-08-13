@@ -30,7 +30,7 @@ here is one we actually ran; every finding is one we actually hit.
 | `go.dev/dl/go1.24.4.linux-arm64.tar.gz` | Ollama needs Go ≥ 1.24; Ubuntu 24.04 apt only has 1.22. |
 | `github.com/ollama/ollama` | Ollama source for the recompile. |
 | `registry.ollama.ai` | Vision models. Each is 1.7-5.5 GB; budget time. |
-| Dev box on the LAN | NATS broker; `192.168.0.22:4222` in our setup. |
+| Dev box on the LAN | NATS broker; `192.168.0.151:4222` in our setup. |
 
 ---
 
@@ -462,7 +462,7 @@ ssh pichick@192.168.0.18 'sudo vi /etc/jchick/jchick.env'
 Defaults from `.env.example` are correct for our setup:
 
 ```
-NATS_URL=nats://192.168.0.22:4222     # your dev box's LAN IP
+NATS_URL=nats://192.168.0.151:4222     # your dev box's LAN IP
 OLLAMA_URL=http://127.0.0.1:11434     # local Ollama on the Jetson
 JCHICK_GATE_MODEL=moondream:1.8b
 JCHICK_DETAIL_MODEL=llava:7b
@@ -511,8 +511,8 @@ ssh pichick@192.168.0.18 'sudo journalctl -u jetson-pichick -f'
 A healthy startup looks like:
 
 ```
-INFO jchick.app: jchick: starting host=pichick ollama=http://127.0.0.1:11434 nats=nats://192.168.0.22:4222 gate=moondream:1.8b detail=llava:7b capture=synthetic@1.00fps
-INFO jchick.nats_pub: nats: connected to nats://192.168.0.22:4222
+INFO jchick.app: jchick: starting host=pichick ollama=http://127.0.0.1:11434 nats=nats://192.168.0.151:4222 gate=moondream:1.8b detail=llava:7b capture=synthetic@1.00fps
+INFO jchick.nats_pub: nats: connected to nats://192.168.0.151:4222
 INFO httpx: HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
 ```
 
@@ -629,7 +629,7 @@ The service does **not** crash. `nats-py` is configured with
 get:
 
 ```
-INFO jchick.nats_pub: nats: connected to nats://192.168.0.22:4222
+INFO jchick.nats_pub: nats: connected to nats://192.168.0.151:4222
 ```
 
 The inference loop keeps running through this — frames are processed
@@ -851,7 +851,7 @@ sudo systemctl restart ollama
 Equivalent jchick env in `/etc/jchick/jchick.env`:
 
 ```
-NATS_URL=nats://192.168.0.76:4222     # control-Pi / dedicated broker
+NATS_URL=nats://192.168.0.151:4222     # control-Pi / dedicated broker
 OLLAMA_URL=http://127.0.0.1:11434     # local on the Jetson
 JCHICK_GATE_MODEL=llava-phi3:3.8b      # single model for both roles (see below)
 JCHICK_DETAIL_MODEL=llava-phi3:3.8b
