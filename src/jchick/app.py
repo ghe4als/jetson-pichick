@@ -28,6 +28,7 @@ from .capture import make_source
 from .cascade import Cascade, CascadeResult
 from .config import Config
 from .diff import FrameDiffGate
+from .mjpeg_server import MJPEGServer
 from .nats_pub import NatsPublisher
 from .ollama import OllamaClient, OllamaError
 from .tegra import parse_line as parse_tegra_line
@@ -51,6 +52,9 @@ class App:
             detail_model=cfg.detail_model,
         )
         self._pub = NatsPublisher(cfg.nats_url)
+        self._mjpeg: MJPEGServer | None = None
+        if cfg.http_port > 0:
+            self._mjpeg = MJPEGServer(cfg, self._source)
         self._last_chickens: int = 0
         self._frames_seen = 0
         self._frames_inferenced = 0
@@ -65,6 +69,10 @@ class App:
         # unreachable broker silently wedges the whole service before the
         # capture/inference/tegra tasks ever spawn.
         asyncio.create_task(self._pub.start(), name="nats_connect")
+        mjpeg_task = None
+        if self._mjpeg is not None:
+            mjpeg_task = asyncio.create_task(self._mjpeg.start(), name="mjpeg")
+            log.info("MJPEG streaming enabled on port %d", self._cfg.http_port)
         await self._publish_startup()
         tasks = [
             asyncio.create_task(self._inference_loop(), name="inference"),
@@ -78,6 +86,8 @@ class App:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             await self._publish_shutdown()
+            if self._mjpeg:
+                await self._mjpeg.stop()
             await self._pub.stop()
 
     def stop(self) -> None:
@@ -104,6 +114,13 @@ class App:
                     continue
                 if result.fired:
                     self._frames_fired += 1
+                if self._mjpeg is not None:
+                    self._mjpeg.update_last_result(result, diff_score=score)
+                    self._mjpeg.update_counters(
+                        seen=self._frames_seen,
+                        inferenced=self._frames_inferenced,
+                        fired=self._frames_fired,
+                    )
                 await self._publish_inference(result, diff_score=score)
         except asyncio.CancelledError:
             raise
