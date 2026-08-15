@@ -48,10 +48,11 @@ class NatsPublisher:
             self._nc = None
 
     async def publish(self, subject: str, payload: dict[str, Any]) -> None:
-        if self._nc is None or not self._nc.is_connected:
-            log.debug("nats: skip publish (%s) — not connected", subject)
-            return
         data = json.dumps(payload, separators=(",", ":")).encode()
+        log.info("nats >> %s %s", subject, data.decode())
+        if self._nc is None or not self._nc.is_connected:
+            log.warning("nats: drop publish (%s) — not connected", subject)
+            return
         try:
             await self._nc.publish(subject, data)
         except Exception as e:
