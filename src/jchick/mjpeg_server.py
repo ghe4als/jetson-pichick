@@ -159,7 +159,7 @@ class MJPEGServer:
                 return
 
             method, path = request[0], request[1]
-            if method != "GET":
+            if method not in ("GET", "POST"):
                 writer.write(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
                 writer.close()
                 return
