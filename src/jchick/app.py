@@ -103,10 +103,13 @@ class App:
                 self._frames_seen += 1
                 if self._mjpeg is not None:
                     self._mjpeg.update_last_frame(jpeg)
+                forced = self._mjpeg is not None and self._mjpeg.consume_trigger()
                 keep, score = self._diff.evaluate(jpeg)
-                if not keep:
+                if not keep and not forced:
                     log.debug("diff gate skipped frame (score=%.4f)", score)
                     continue
+                if forced:
+                    log.info("manual trigger: bypassing diff gate (score=%.4f)", score)
                 self._frames_inferenced += 1
                 try:
                     result = await self._cascade.run(jpeg)

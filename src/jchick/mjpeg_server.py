@@ -1,14 +1,19 @@
-"""Simple MJPEG streaming server with detection overlay.
+"""Simple MJPEG streaming server with a separate HUD text panel.
 
 Provides:
 - /stream endpoint serving multipart/x-mixed-replace video stream
-- / endpoint serving a simple HTML viewer page
-- LastResult shared state: inference loop writes, stream loop reads
-- Text HUD overlay (chicken count, confidence, movement, diff score, fps,
-  timestamp). No bounding boxes — the Ollama prompt doesn't return them.
+  (clean frames — no on-image overlay)
+- /state endpoint returning current inference HUD as JSON (polled by
+  the viewer page and rendered as HTML text below the image)
+- /trigger endpoint (POST) arming a one-shot manual trigger that
+  bypasses the motion diff gate on the next frame
+- / endpoint serving a simple HTML viewer page with the camera image,
+  an HUD text panel, and a 'Trigger now' button
+- LastResult shared state: inference loop writes, /state reads
+- The inference loop checks consume_trigger() each frame to decide
+  whether to bypass the diff gate.
 
-Uses Python stdlib only - no external dependencies beyond PIL (already
-in pyproject.toml) for JPEG decode + ImageDraw overlay.
+Uses Python stdlib only — no external dependencies.
 """
 from __future__ import annotations
 
@@ -17,10 +22,7 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from io import BytesIO
 from typing import Any
-
-from PIL import Image, ImageDraw
 
 from .capture import FrameSource
 from .config import Config
@@ -68,6 +70,7 @@ class MJPEGServer:
         self._running = False
         self._last: LastResult = LastResult()
         self._last_jpeg: bytes | None = None
+        self._trigger = False
 
     def update_last_frame(self, jpeg: bytes) -> None:
         """Called by the inference loop on every captured frame (before diff gate).
@@ -108,6 +111,18 @@ class MJPEGServer:
         self._last.frames_seen = seen
         self._last.frames_inferenced = inferenced
         self._last.frames_fired = fired
+
+    def request_trigger(self) -> bool:
+        """Called by HTTP /trigger handler. Returns True if armed."""
+        self._trigger = True
+        return True
+
+    def consume_trigger(self) -> bool:
+        """Called by inference loop each frame. Returns True once, then resets."""
+        if self._trigger:
+            self._trigger = False
+            return True
+        return False
 
     async def start(self) -> None:
         """Start the HTTP server on configured port."""
@@ -157,6 +172,10 @@ class MJPEGServer:
 
             if path == "/stream":
                 await self._serve_stream(writer)
+            elif path == "/state":
+                await self._serve_state(writer)
+            elif path == "/trigger":
+                await self._serve_trigger(writer, method)
             elif path == "/":
                 await self._serve_viewer(writer)
             else:
@@ -172,6 +191,72 @@ class MJPEGServer:
                 writer.close()
             except Exception:
                 pass
+
+    async def _serve_state(self, writer: asyncio.StreamWriter) -> None:
+        """Serve current HUD state as JSON for the viewer's text panel."""
+        import json
+
+        r = self._last
+        age = time.monotonic() - r.updated_at if r.updated_at else 0.0
+        payload = {
+            "chickens": r.chickens,
+            "other_animals": r.other_animals,
+            "movement": r.movement,
+            "confidence": r.confidence,
+            "notes": r.notes,
+            "model": r.model,
+            "latency_ms": r.latency_ms,
+            "fired": r.fired,
+            "diff_score": r.diff_score,
+            "frames_seen": r.frames_seen,
+            "frames_inferenced": r.frames_inferenced,
+            "frames_fired": r.frames_fired,
+            "age_s": round(age, 1),
+            "has_result": r.updated_at != 0.0,
+            "fps": self._cfg.capture_fps,
+            "source": self._cfg.capture_source,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        head = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"Connection: close\r\n"
+            b"Access-Control-Allow-Origin: *\r\n"
+            b"\r\n"
+        )
+        writer.write(head + body)
+        await writer.drain()
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+    async def _serve_trigger(self, writer: asyncio.StreamWriter, method: str) -> None:
+        """Arm a manual trigger that bypasses the diff gate on the next frame."""
+        if method != "POST":
+            writer.write(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
+            writer.close()
+            return
+        self.request_trigger()
+        body = b'{"ok":true}'
+        head = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"Connection: close\r\n"
+            b"Access-Control-Allow-Origin: *\r\n"
+            b"\r\n"
+        )
+        writer.write(head + body)
+        await writer.drain()
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        log.info("manual trigger armed")
 
     async def _serve_stream(self, writer: asyncio.StreamWriter) -> None:
         """Serve continuous MJPEG stream with HUD overlay."""
@@ -236,84 +321,17 @@ class MJPEGServer:
         while self._running:
             jpeg = self._last_jpeg
             if jpeg is not None:
-                yield self._overlay(jpeg)
+                yield jpeg
             await asyncio.sleep(period)
 
-    def _overlay(self, jpeg: bytes) -> bytes:
-        """Decode JPEG, draw HUD, re-encode. Returns new JPEG bytes.
-
-        If decode fails (corrupt frame), returns the original bytes —
-        better to show a raw frame than drop it.
-        """
-        try:
-            img = Image.open(BytesIO(jpeg))
-            img = img.convert("RGB")
-        except Exception as e:
-            log.debug("overlay: JPEG decode failed (%s); passing through", e)
-            return jpeg
-
-        draw = ImageDraw.Draw(img, "RGBA")
-        r = self._last
-        age = time.monotonic() - r.updated_at if r.updated_at else 0.0
-
-        # Color: green if chickens>0, yellow if gated/stale-ish, red if
-        # very stale (>10s), gray if no result yet.
-        if r.updated_at == 0.0:
-            bar = (90, 90, 90, 200)
-        elif age > 10.0:
-            bar = (180, 60, 60, 220)
-        elif r.chickens > 0:
-            bar = (60, 180, 90, 220)
-        else:
-            bar = (200, 180, 60, 200)
-
-        # Top status bar lines
-        lines = []
-        if r.updated_at == 0.0:
-            lines.append("waiting for first inference...")
-        else:
-            lines.append(
-                f"chickens={r.chickens}  conf={r.confidence*100:.0f}%  "
-                f"move={r.movement}  {'FIRED' if r.fired else 'gated'}"
-            )
-            if r.other_animals:
-                lines.append("other: " + ", ".join(r.other_animals))
-            lines.append(
-                f"diff={r.diff_score:.4f}  {r.model}  {r.latency_ms}ms  "
-                f"age={age:.1f}s"
-            )
-        lines.append(
-            f"seen={r.frames_seen} inf={r.frames_inferenced} fired={r.frames_fired}  "
-            f"{self._cfg.capture_source}@{self._cfg.capture_fps:.2f}fps"
-        )
-
-        # Draw semi-transparent bar across the top, then text on top.
-        bar_h = 18 * len(lines) + 8
-        draw.rectangle([0, 0, img.width, bar_h], fill=bar)
-        y = 4
-        for line in lines:
-            draw.text((6, y), line, fill=(255, 255, 255, 255))
-            y += 18
-
-        # Notes (if any) in a smaller bottom bar
-        if r.notes:
-            nb_h = 22
-            draw.rectangle(
-                [0, img.height - nb_h, img.width, img.height],
-                fill=(0, 0, 0, 160),
-            )
-            draw.text(
-                (6, img.height - nb_h + 3),
-                r.notes[:120],
-                fill=(255, 255, 255, 255),
-            )
-
-        buf = BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        return buf.getvalue()
-
     def _viewer_html(self) -> str:
-        """Return HTML viewer page."""
+        """Return HTML viewer page.
+
+        Layout: clean camera image on top, an HUD text panel below it
+        (fed by polling /state), and a 'Trigger now' button that POSTs
+        to /trigger to force inference on the next frame regardless of
+        motion.
+        """
         # NOTE: do NOT use str.format() here — the CSS contains literal
         # { } braces that .format() would try to interpret as field names.
         # Plain .replace() avoids the footgun.
@@ -322,7 +340,7 @@ class MJPEGServer:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jetson Picchk Camera</title>
+    <title>Jetson PiChick Camera</title>
     <style>
         body {
             margin: 0;
@@ -331,73 +349,125 @@ class MJPEGServer:
             color: #e0e0e0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
-        .container {
-            max-width: 1280px;
-            margin: 0 auto;
-        }
-        h1 {
-            margin-bottom: 10px;
-            font-size: 24px;
-        }
-        .status {
-            font-size: 14px;
-            color: #888;
-            margin-bottom: 20px;
-        }
-        .camera-wrapper {
-            position: relative;
-            width: 100%;
-            max-width: 1280px;
-            margin: 0 auto;
-        }
-        #camera {
-            width: 100%;
-            height: auto;
-            display: block;
-            border-radius: 8px;
-        }
+        .container { max-width: 1280px; margin: 0 auto; }
+        .header-row { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+        h1 { margin: 0; font-size: 24px; }
+        .status { font-size: 14px; color: #888; margin-bottom: 20px; }
+        .camera-wrapper { position: relative; width: 100%; max-width: 1280px; margin: 0 auto; }
+        #camera { width: 100%; height: auto; display: block; border-radius: 8px; }
         .placeholder {
-            position: absolute;
-            top: 50%;
-            left: 50%;
+            position: absolute; top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            color: #666;
-            font-size: 18px;
+            color: #666; font-size: 18px;
         }
         .loading {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.7);
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 12px;
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(0,0,0,0.7); padding: 8px 12px;
+            border-radius: 4px; font-size: 12px;
         }
+        .hud {
+            margin: 16px auto 0; max-width: 1280px;
+            background: #222; border: 1px solid #333;
+            border-radius: 8px; padding: 14px 16px;
+            font-family: "SF Mono", Menlo, Consolas, monospace;
+            font-size: 13px; line-height: 1.5;
+            min-height: 80px;
+        }
+        .hud-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .hud-field { color: #aaa; }
+        .hud-field b { color: #e0e0e0; font-weight: 600; }
+        .hud-notes { margin-top: 8px; color: #9ac; font-style: italic; }
+        .hud-empty { color: #666; }
+        .fired-yes { color: #6c6; font-weight: 700; }
+        .fired-no  { color: #cc6; }
+        #trigger-btn {
+            margin-left: auto;
+            padding: 8px 16px; font-size: 14px;
+            background: #2a6; color: #fff; border: none;
+            border-radius: 6px; cursor: pointer;
+            transition: background 0.15s;
+        }
+        #trigger-btn:hover { background: #3b7; }
+        #trigger-btn:disabled { background: #555; cursor: wait; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Jetson Picchk Camera</h1>
+        <div class="header-row">
+            <h1>Jetson PiChick Camera</h1>
+            <button id="trigger-btn" type="button">Trigger now</button>
+        </div>
         <div class="status">Capturing at __FPS__ fps | Source: __SOURCE__</div>
         <div class="camera-wrapper">
             <img id="camera" src="/stream" alt="Camera stream" style="display:none;">
             <div class="placeholder" id="placeholder">Connecting to camera...</div>
             <div class="loading">Refresh page to reconnect</div>
         </div>
+        <div class="hud" id="hud">
+            <div class="hud-empty">waiting for first inference...</div>
+        </div>
     </div>
     <script>
         const img = document.getElementById('camera');
         const placeholder = document.getElementById('placeholder');
+        const hud = document.getElementById('hud');
+        const triggerBtn = document.getElementById('trigger-btn');
 
-        img.onload = function() {
-            this.style.display = 'block';
-            placeholder.style.display = 'none';
-        };
-
+        img.onload = function() { this.style.display='block'; placeholder.style.display='none'; };
         img.onerror = function() {
             placeholder.textContent = 'Camera connection lost. Refreshing...';
             setTimeout(() => location.reload(), 2000);
         };
+
+        function renderHud(s) {
+            if (!s.has_result) {
+                hud.innerHTML = '<div class="hud-empty">waiting for first inference...</div>';
+                return;
+            }
+            const fired = s.fired
+                ? '<span class="fired-yes">FIRED</span>'
+                : '<span class="fired-no">gated</span>';
+            const others = s.other_animals && s.other_animals.length
+                ? s.other_animals.join(', ') : 'none';
+            let html = '<div class="hud-row">'
+                + '<span class="hud-field">chickens <b>' + s.chickens + '</b></span>'
+                + '<span class="hud-field">conf <b>' + (s.confidence*100).toFixed(0) + '%</b></span>'
+                + '<span class="hud-field">move <b>' + s.movement + '</b></span>'
+                + '<span class="hud-field">state <b>' + fired + '</b></span>'
+                + '<span class="hud-field">other <b>' + others + '</b></span>'
+                + '</div>'
+                + '<div class="hud-row">'
+                + '<span class="hud-field">diff <b>' + s.diff_score.toFixed(4) + '</b></span>'
+                + '<span class="hud-field">model <b>' + s.model + '</b></span>'
+                + '<span class="hud-field">lat <b>' + s.latency_ms + 'ms</b></span>'
+                + '<span class="hud-field">age <b>' + s.age_s + 's</b></span>'
+                + '</div>'
+                + '<div class="hud-row">'
+                + '<span class="hud-field">seen <b>' + s.frames_seen + '</b></span>'
+                + '<span class="hud-field">inf <b>' + s.frames_inferenced + '</b></span>'
+                + '<span class="hud-field">fired <b>' + s.frames_fired + '</b></span>'
+                + '<span class="hud-field">cap <b>' + s.source + '@' + s.fps + 'fps</b></span>'
+                + '</div>';
+            if (s.notes) html += '<div class="hud-notes">' + s.notes + '</div>';
+            hud.innerHTML = html;
+        }
+
+        async function pollState() {
+            try {
+                const r = await fetch('/state', {cache: 'no-store'});
+                if (r.ok) renderHud(await r.json());
+            } catch (e) { /* ignore transient errors */ }
+        }
+        setInterval(pollState, 1000);
+        pollState();
+
+        triggerBtn.addEventListener('click', async () => {
+            triggerBtn.disabled = true;
+            try {
+                await fetch('/trigger', {method: 'POST'});
+            } catch (e) { /* ignore */ }
+            setTimeout(() => { triggerBtn.disabled = false; }, 3000);
+        });
     </script>
 </body>
 </html>""".replace("__FPS__", str(self._cfg.capture_fps)).replace(
