@@ -172,6 +172,8 @@ class MJPEGServer:
 
             if path == "/stream":
                 await self._serve_stream(writer)
+            elif path == "/snapshot.jpg" or path == "/snapshot.jpeg":
+                await self._serve_snapshot(writer)
             elif path == "/state":
                 await self._serve_state(writer)
             elif path == "/trigger":
@@ -257,6 +259,37 @@ class MJPEGServer:
         except Exception:
             pass
         log.info("manual trigger armed")
+
+    async def _serve_snapshot(self, writer: asyncio.StreamWriter) -> None:
+        """Serve the most recent captured JPEG as a single image."""
+        jpeg = self._last_jpeg
+        if jpeg is None:
+            writer.write(
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: text/plain\r\n\r\nNo frame yet"
+            )
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return
+        head = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: image/jpeg\r\n"
+            b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n"
+            b"Connection: close\r\n"
+            b"Cache-Control: no-cache\r\n"
+            b"Access-Control-Allow-Origin: *\r\n"
+            b"\r\n"
+        )
+        writer.write(head + jpeg)
+        await writer.drain()
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
 
     async def _serve_stream(self, writer: asyncio.StreamWriter) -> None:
         """Serve continuous MJPEG stream with HUD overlay."""
