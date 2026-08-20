@@ -394,9 +394,8 @@ class MJPEGServer:
             color: #666; font-size: 18px;
         }
         .loading {
-            position: absolute; top: 10px; right: 10px;
-            background: rgba(0,0,0,0.7); padding: 8px 12px;
-            border-radius: 4px; font-size: 12px;
+            margin: 10px auto 0; max-width: 1280px;
+            color: #888; font-size: 12px; text-align: right;
         }
         .hud {
             margin: 16px auto 0; max-width: 1280px;
