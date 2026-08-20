@@ -22,7 +22,10 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from io import BytesIO
 from typing import Any
+
+from PIL import Image
 
 from .capture import FrameSource
 from .config import Config
@@ -174,6 +177,8 @@ class MJPEGServer:
                 await self._serve_stream(writer)
             elif path == "/snapshot.jpg" or path == "/snapshot.jpeg":
                 await self._serve_snapshot(writer)
+            elif path == "/snapshot_small.jpg":
+                await self._serve_snapshot_small(writer)
             elif path == "/state":
                 await self._serve_state(writer)
             elif path == "/trigger":
@@ -261,7 +266,7 @@ class MJPEGServer:
         log.info("manual trigger armed")
 
     async def _serve_snapshot(self, writer: asyncio.StreamWriter) -> None:
-        """Serve the most recent captured JPEG as a single image."""
+        """Serve the most recent captured JPEG as a single image (full size)."""
         jpeg = self._last_jpeg
         if jpeg is None:
             writer.write(
@@ -274,6 +279,50 @@ class MJPEGServer:
             except Exception:
                 pass
             return
+        head = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: image/jpeg\r\n"
+            b"Content-Length: " + str(len(jpeg)).encode() + b"\r\n"
+            b"Connection: close\r\n"
+            b"Cache-Control: no-cache\r\n"
+            b"Access-Control-Allow-Origin: *\r\n"
+            b"\r\n"
+        )
+        writer.write(head + jpeg)
+        await writer.drain()
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+    async def _serve_snapshot_small(self, writer: asyncio.StreamWriter) -> None:
+        """Serve the most recent captured JPEG resized to 480x360 (4:3).
+
+        For the Elcrow 5" display; the capture is 1280x720 (16:9) so a
+        slight horizontal stretch is expected and acceptable on a small
+        status panel. Falls back to the full-size image on resize error.
+        """
+        jpeg = self._last_jpeg
+        if jpeg is None:
+            writer.write(
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: text/plain\r\n\r\nNo frame yet"
+            )
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return
+        try:
+            with Image.open(BytesIO(jpeg)) as img:
+                small = img.resize((480, 360), Image.Resampling.BILINEAR)
+                buf = BytesIO()
+                small.save(buf, format="JPEG", quality=85)
+                jpeg = buf.getvalue()
+        except Exception as e:
+            log.warning("snapshot_small resize failed, serving original: %s", e)
         head = (
             b"HTTP/1.1 200 OK\r\n"
             b"Content-Type: image/jpeg\r\n"
