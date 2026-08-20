@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import socket
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -34,6 +35,19 @@ from .ollama import OllamaClient, OllamaError
 from .tegra import parse_line as parse_tegra_line
 
 log = logging.getLogger(__name__)
+
+
+def _local_ip() -> str:
+    """Best-effort primary LAN IP address (UDP socket trick)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return ""
 
 
 class App:
@@ -59,6 +73,7 @@ class App:
         self._frames_seen = 0
         self._frames_inferenced = 0
         self._frames_fired = 0
+        self._ip = _local_ip()
 
     async def run(self) -> None:
         # Start NATS in the background — don't block the event loop on the
@@ -180,6 +195,7 @@ class App:
     async def _publish(self, suffix: str, payload: dict[str, Any]) -> None:
         payload = {
             "host": self._cfg.host,
+            "ip": self._ip,
             "ts": _now_iso(),
             **payload,
         }
