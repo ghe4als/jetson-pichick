@@ -123,6 +123,7 @@ class V4L2Source(FrameSource):
             "-video_size", f"{self._cfg.capture_width}x{self._cfg.capture_height}",
             "-i", self._cfg.capture_device,
             "-frames:v", "1",
+            "-pix_fmt", "yuvj420p",
             "-f", "image2pipe", "-vcodec", "mjpeg", "-",
         ]
         proc = await asyncio.create_subprocess_exec(
