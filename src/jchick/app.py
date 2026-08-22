@@ -37,12 +37,22 @@ from .tegra import parse_line as parse_tegra_line
 log = logging.getLogger(__name__)
 
 
-def _local_ip() -> str:
-    """Best-effort primary LAN IP address (UDP socket trick)."""
+def _local_ip(target: str = "8.8.8.8") -> str:
+    """Best-effort primary LAN IP address (UDP socket trick).
+
+    Connects (without sending) to ``target`` so the kernel picks the
+    interface on the route to that host. Defaults to 8.8.8.8; pass the
+    NATS broker host so we get the interface that reaches subscribers,
+    not the L4T USB device-mode interface (192.168.55.1) on Jetson.
+    """
     try:
+        host = target
+        if "://" in target:
+            from urllib.parse import urlparse
+            host = urlparse(target).hostname or target
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(0)
-        s.connect(("8.8.8.8", 80))
+        s.connect((host, 80))
         ip = s.getsockname()[0]
         s.close()
         return ip
@@ -73,7 +83,7 @@ class App:
         self._frames_seen = 0
         self._frames_inferenced = 0
         self._frames_fired = 0
-        self._ip = _local_ip()
+        self._ip = _local_ip(cfg.nats_url)
 
     async def run(self) -> None:
         # Start NATS in the background — don't block the event loop on the
