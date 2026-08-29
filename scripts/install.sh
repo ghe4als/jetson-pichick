@@ -35,7 +35,7 @@ GROUP="jchick"
 echo "==> apt: installing runtime dependencies"
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-  python3-venv python3-pip ffmpeg v4l-utils
+  python3-venv python3-pip ffmpeg v4l-utils gstreamer1.0-tools
 
 echo "==> users: creating $USER (system user)"
 if ! getent group "$GROUP" >/dev/null; then
