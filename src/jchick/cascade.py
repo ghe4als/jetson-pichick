@@ -13,6 +13,10 @@ hits.
 
 Returned ``CascadeResult`` carries both stages' outputs so callers can
 log the gate's decision separately from the final answer.
+
+Same-model shortcut: when ``gate_model == detail_model`` (the current
+deployment runs llava-phi3:3.8b for both), the gate pass already IS the
+detail pass, so ``run`` reuses it instead of calling Ollama twice.
 """
 from __future__ import annotations
 
@@ -47,6 +51,12 @@ class Cascade:
         gate = await self._client.describe(jpeg, model=self._gate_model)
         if not _gate_says_interesting(gate):
             return CascadeResult(gate=gate, detail=None, fired=False)
+        if self._gate_model == self._detail_model:
+            # Same model for both stages: the gate pass already answered
+            # the detail question with the identical model, prompt, and
+            # frame. Re-running it only adds latency (production history:
+            # the two passes disagreed on 3 of 573 frames), so reuse it.
+            return CascadeResult(gate=gate, detail=gate, fired=True)
         try:
             detail = await self._client.describe(jpeg, model=self._detail_model)
         except OllamaError as e:
