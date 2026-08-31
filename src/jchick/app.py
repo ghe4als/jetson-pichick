@@ -261,10 +261,10 @@ class App:
                 "latency_ms": r.detail.latency_ms,
             }
         await self._publish("inference.fired", {
+            "chickens": chosen.chickens,
             "diff_score": round(diff_score, 4),
             "gate": gate_payload,
             "detail": detail_payload,
-            "chickens": chosen.chickens,
         })
         if chosen.chickens > 0:
             await self._publish("detection.chicken", {
