@@ -20,6 +20,15 @@ import httpx
 log = logging.getLogger(__name__)
 
 
+# Minimal delta over the original prompt, whose empty-coop behavior is
+# proven correct (deployed service gates empty frames at chickens=0).
+# The ONLY change from the original: the visibility rule for
+# other_animals, which suppresses dusk phantom-predator reports.
+# Never add species names here — an A/B on a lit EMPTY coop proved this
+# model invents whatever animal it is told about (species menu -> "cat,
+# dog, rat" 3/3; even "a rooster is never other" -> phantom rooster 2/2,
+# while the plain old prompt says 0). Poultry reclassification is done
+# in code (_reclassify_poultry), not words.
 PROMPT = (
      'You are a chicken-coop security camera analyzing one still frame. '
      'Reply ONLY with one JSON object on a single line, matching this '
@@ -31,8 +40,10 @@ PROMPT = (
      'Rules:\n'
      '- chickens = number of chickens VISIBLE in the frame. If no chickens '
      'are visible, use 0. Do not assume chickens are present.\n'
-     '- other_animals = list of other animal species clearly visible in the '
-     'frame. Empty list if none.\n'
+     '- other_animals = non-poultry animals clearly visible in the frame. '
+     'Empty list if none. Only include an animal if most of its body is '
+     'clearly visible; do not report suspected, hidden, or '
+     'partially-glimpsed animals.\n'
      '- If the frame shows no animals at all, return exactly: '
      '{"chickens": 0, "other_animals": [], "movement": "still", '
      '"confidence": 0.9, "notes": "No animals visible."}\n'
@@ -123,16 +134,7 @@ class OllamaClient:
             log.warning("model %s did not return valid JSON: %s", model, text[:500])
             raise OllamaError(f"model returned non-JSON: {text[:500]}...") from e
 
-        return VisionResult(
-            chickens=_safe_int(data.get("chickens"), 0),
-            other_animals=_safe_str_list(data.get("other_animals")),
-            movement=str(data.get("movement", "still")).lower(),
-            confidence=_safe_float(data.get("confidence"), 0.0),
-            notes=str(data.get("notes", ""))[:200],
-            model=model,
-            latency_ms=latency_ms,
-            raw=data,
-         )
+        return _build_result(data, model=model, latency_ms=latency_ms)
 
 
 def _safe_int(v: Any, default: int) -> int:
@@ -149,7 +151,58 @@ def _safe_float(v: Any, default: float) -> float:
         return default
 
 
-def _safe_str_list(v: Any) -> list[str]:
+# Poultry terms the model files under other_animals when it splits the
+# flock (production history: "2 chickens + 1 rooster" on a 3-bird coop).
+# Folding them back into chickens prevents both the undercount (door
+# would close early) and the false PREDATOR alert downstream. A frame
+# the model split is treated as unreliable: confidence is clamped to
+# 0.5 so the ESP32 consumer (conf >= 0.80 filter) drops it and waits
+# for a clean frame. A prompt-side fix was tested and REJECTED: this
+# model invents any animal it is told about, even in negation.
+_POULTRY = (
+    "rooster", "hen", "chick", "chicken", "pullet", "cockerel",
+    "duck", "goose", "turkey", "fowl",
+)
+
+
+def _build_result(data: dict[str, Any], *, model: str, latency_ms: int) -> VisionResult:
+    entries = _normalize_animals(data.get("other_animals"))
+    kept = [sp for sp, _ in entries if not _is_poultry(sp)]
+    folded = sum(n for sp, n in entries if _is_poultry(sp))
+    chickens = _safe_int(data.get("chickens"), 0) + folded
+    confidence = _safe_float(data.get("confidence"), 0.0)
+    notes = str(data.get("notes", ""))[:200]
+    if folded:
+        confidence = min(confidence, 0.5)
+        notes = (notes + f" [poultry folded into chickens: +{folded}]")[:200]
+    return VisionResult(
+        chickens=chickens,
+        other_animals=kept,
+        movement=str(data.get("movement", "still")).lower(),
+        confidence=confidence,
+        notes=notes,
+        model=model,
+        latency_ms=latency_ms,
+        raw=data,
+    )
+
+
+def _normalize_animals(v: Any) -> list[tuple[str, int]]:
+    """Model returns either ["cat"] or [{"species": "cat", "count": 2}]."""
     if not isinstance(v, list):
         return []
-    return [str(x).lower().strip() for x in v if str(x).strip()]
+    out: list[tuple[str, int]] = []
+    for item in v:
+        if isinstance(item, dict):
+            sp = str(item.get("species", "")).lower().strip()
+            if sp:
+                out.append((sp, max(1, _safe_int(item.get("count", 1), 1))))
+        else:
+            sp = str(item).lower().strip()
+            if sp:
+                out.append((sp, 1))
+    return out
+
+
+def _is_poultry(species: str) -> bool:
+    return any(p in species for p in _POULTRY)
