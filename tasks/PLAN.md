@@ -84,7 +84,8 @@ was already resolved by the earlier model swap to llava-phi3:3.8b (3-day
 fired history shows counts 0-3, not stuck-at-0). The offline-harness
 route (T06-T09) was replaced by live empty-coop A/B testing during the
 2026-08-31 session. T10's goal shipped as v0.2.0 via commits f674442 +
-c3d5703 (see tasks/T11_consumer_streak.md context for the evidence).
+c3d5703 (evidence: 3-day inference.fired review, summarized in the
+detection-tuning phase Context below).
 
 ## Task list (diff-gate fix) — CLOSED
 - [x] T06 — Gate-frame audit dump        ✘ DROPPED (superseded; live A/B used instead)
@@ -103,9 +104,9 @@ None.
 # Detection tuning — 2026-08-31
 
 ## Goal
-Harden the detection pipeline against the two failure modes measured in
-the 2026-08-31 live review: phantom-predator false alerts at dusk and
-single-frame door-close on a flickering count signal.
+Verify the v0.2.0 producer detection fixes against the dusk failure
+window: phantom-predator false alerts at dusk and count flicker with
+the birds present.
 
 ## Context
 3-day `inference.fired` review (575 frames): 2↔3 count flicker (209
@@ -114,20 +115,22 @@ filter, rooster-split undercounts (9 frames), gate+detail running the
 same model twice (+5.5s/frame). Producer side shipped as v0.2.0
 (f674442: visibility prompt + poultry folding + conf clamp; c3d5703:
 same-model single-pass) and was verified live on an empty lit coop the
-same day. Remaining work is in the consumer repo and one observation
-window.
+same day. Remaining work is one observation window.
 
 ## Status (detection tuning)
 Current task: T12 (PENDING — needs dusk window ~16:30-19:40 local)
 Last completed: v0.2.0 producer deploy (empty-coop verified) 2026-08-31
 
 ## Task list (detection tuning)
-- [ ] T11 — Raise CHICKENS_CONFIRM_STREAK 1→2 in coop_door_controller (consumer repo)  ⬜ TODO
-- [ ] T12 — Dusk verification of v0.2.0 detection tuning (observation only)           ⬜ PENDING dusk
+- [ ] T12 — Dusk verification of v0.2.0 detection tuning (observation only)  ⬜ PENDING dusk
+
+T11 (consumer CHICKENS_CONFIRM_STREAK 1→2) removed 2026-08-31 by user
+decision — consumer behavior stays as-is: the door can still close on a
+single qualifying frame (conf≥0.8, chickens≥3).
 
 ## Blocked
 T12 blocked until the next dusk window (~16:30 local) with chickens
-returning. T11 is not blocked.
+returning.
 
 ## Notes (diff-gate fix)
 - Same model throughout: `JCHICK_GATE_MODEL`/`JCHICK_DETAIL_MODEL` stay

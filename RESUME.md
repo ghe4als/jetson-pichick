@@ -12,14 +12,14 @@ in PROMPT (src/jchick/ollama.py comment records the evidence). Poultry
 reclassification lives in code (`_build_result`, conf clamp 0.5).
 
 **Pending tasks (tasks/PLAN.md, detection-tuning phase):**
-- T11 — consumer repo: CHICKENS_CONFIRM_STREAK 1→2 (door currently
-  closes on ONE 3-count frame at conf≥0.8; single phantom could lock
-  the flock out). Task file: tasks/T11_consumer_streak.md
 - T12 — dusk verification window (~16:30-19:40 local): watch
   `nats sub -s nats://192.168.0.151:4222 'home.coop.pichick.>'`;
   success = zero phantom detection.<species>, correct 3-counts,
   single-pass latency ~12-13s on fired frames.
   Task file: tasks/T12_dusk_verification.md
+  Note: consumer stays at CHICKENS_CONFIRM_STREAK=1 (T11 dropped by
+  user decision 2026-08-31) — a single conf≥0.8 phantom during the
+  close window closes the door; zero-phantom is safety-critical.
 
 **Known issues, deliberately not touched:**
 - Service stop takes ~50s (open MJPEG /stream holds wait_closed);
@@ -29,5 +29,6 @@ reclassification lives in code (`_build_result`, conf clamp 0.5).
 - OOM killer killed llama-server once (7GB anon-rss on 7.5GB SoC);
   auto-recovered ~5s. Keep exactly one model loaded.
 
-**Next:** run T11 (one-line consumer change, separate repo), then T12
-at dusk; close the phase from T12 results.
+**Next:** T12 at dusk (commands and success criteria in the task file);
+close the phase from its results. All session work committed and
+pushed to origin/main.

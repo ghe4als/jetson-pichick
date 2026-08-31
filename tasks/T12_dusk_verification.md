@@ -23,7 +23,12 @@ each evening; the flock is 3.
 ## Pre-conditions
 - [ ] Producer v0.2.0 live (verified: status.startup version=0.2.0,
       PID 324723, 2026-08-31 ~11:31 local)
-- [ ] T11 optional but preferred (streak=2 makes a bad night safe)
+
+Stakes note: the consumer stays at CHICKENS_CONFIRM_STREAK=1 (the
+planned streak bump was dropped by user decision 2026-08-31), so a
+single conf>=0.8 phantom 3-count during the close window latches
+all_home and closes the door. The zero-phantom criterion below is
+safety-critical, not just a quality metric.
 
 ## Procedure (exact commands)
 On any LAN host with nats CLI, for the whole window:
