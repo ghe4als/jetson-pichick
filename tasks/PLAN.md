@@ -78,21 +78,56 @@ iteration does not need repeated daylight windows or deploys. Same
 model (`llava-phi3:3.8b`) throughout; `--model` on the harness is the
 "change between them for testing" mechanism.
 
-## Status (diff-gate fix)
-Current task: T06 (TODO)
-Last completed: T05 (prior phase)
+## Status (diff-gate fix) — CLOSED 2026-08-31
+Phase superseded. Premise (gate reports chickens:0 with birds present)
+was already resolved by the earlier model swap to llava-phi3:3.8b (3-day
+fired history shows counts 0-3, not stuck-at-0). The offline-harness
+route (T06-T09) was replaced by live empty-coop A/B testing during the
+2026-08-31 session. T10's goal shipped as v0.2.0 via commits f674442 +
+c3d5703 (see tasks/T11_consumer_streak.md context for the evidence).
 
-## Task list (diff-gate fix)
-- [ ] T06 — Gate-frame audit dump (capture dismissed frames = the A/B test set)     ⬜ TODO
-- [ ] T07 — Offline gate eval harness (any prompt × any model vs a frame dir)        ⬜ TODO
-- [ ] T08 — Deploy T06+T07, enable audit, capture the "before" baseline (same model) ⬜ TODO
-- [ ] T09 — "After" test: de-biased prompt vs baseline frames, same model (offline)  ⬜ TODO
-- [ ] T10 — Apply winning prompt + confirm live + close out (CONDITIONAL on T09)    ⬜ TODO
+## Task list (diff-gate fix) — CLOSED
+- [x] T06 — Gate-frame audit dump        ✘ DROPPED (superseded; live A/B used instead)
+- [x] T07 — Offline gate eval harness    ✘ DROPPED (superseded; live A/B used instead)
+- [x] T08 — Deploy + capture baseline    ✘ DROPPED (superseded; live A/B used instead)
+- [x] T09 — "After" test offline         ✘ DROPPED (superseded; live A/B used instead)
+- [x] T10 — Apply winning prompt + confirm live   ✅ DONE via v0.2.0 (f674442 + c3d5703,
+      deployed 2026-08-31, empty-coop verified live; mechanism differed from plan —
+      see tasks/T12_dusk_verification.md for the remaining dusk-window check)
 
 ## Blocked
-None until T08's daylight capture (needs chickens present + motion),
-and again T10's live confirmation (same). T09 is offline and needs no
-daylight window.
+None.
+
+---
+
+# Detection tuning — 2026-08-31
+
+## Goal
+Harden the detection pipeline against the two failure modes measured in
+the 2026-08-31 live review: phantom-predator false alerts at dusk and
+single-frame door-close on a flickering count signal.
+
+## Context
+3-day `inference.fired` review (575 frames): 2↔3 count flicker (209
+flips), 13 phantom-predator frames passing the consumer conf≥0.80
+filter, rooster-split undercounts (9 frames), gate+detail running the
+same model twice (+5.5s/frame). Producer side shipped as v0.2.0
+(f674442: visibility prompt + poultry folding + conf clamp; c3d5703:
+same-model single-pass) and was verified live on an empty lit coop the
+same day. Remaining work is in the consumer repo and one observation
+window.
+
+## Status (detection tuning)
+Current task: T12 (PENDING — needs dusk window ~16:30-19:40 local)
+Last completed: v0.2.0 producer deploy (empty-coop verified) 2026-08-31
+
+## Task list (detection tuning)
+- [ ] T11 — Raise CHICKENS_CONFIRM_STREAK 1→2 in coop_door_controller (consumer repo)  ⬜ TODO
+- [ ] T12 — Dusk verification of v0.2.0 detection tuning (observation only)           ⬜ PENDING dusk
+
+## Blocked
+T12 blocked until the next dusk window (~16:30 local) with chickens
+returning. T11 is not blocked.
 
 ## Notes (diff-gate fix)
 - Same model throughout: `JCHICK_GATE_MODEL`/`JCHICK_DETAIL_MODEL` stay
