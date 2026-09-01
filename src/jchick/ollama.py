@@ -71,12 +71,15 @@ class OllamaError(RuntimeError):
 
 
 class OllamaClient:
-    def __init__(self, base_url: str, *, timeout: float = 120.0) -> None:
+    def __init__(self, base_url: str, *, timeout: float = 120.0,
+                 allowed_species: list[str] | None = None) -> None:
         self._base = base_url.rstrip("/")
         self._timeout = timeout
+        self._allowed = allowed_species if allowed_species is not None else ["*"]
 
     async def describe(self, jpeg: bytes, *, model: str) -> VisionResult:
         b64 = base64.b64encode(jpeg).decode("ascii")
+        allowed = self._allowed
         
         # Use /api/chat endpoint which properly supports format=json
         body = {
@@ -134,7 +137,7 @@ class OllamaClient:
             log.warning("model %s did not return valid JSON: %s", model, text[:500])
             raise OllamaError(f"model returned non-JSON: {text[:500]}...") from e
 
-        return _build_result(data, model=model, latency_ms=latency_ms)
+        return _build_result(data, model=model, latency_ms=latency_ms, allowed=allowed)
 
 
 def _safe_int(v: Any, default: int) -> int:
@@ -165,16 +168,38 @@ _POULTRY = (
 )
 
 
-def _build_result(data: dict[str, Any], *, model: str, latency_ms: int) -> VisionResult:
+def _build_result(data: dict[str, Any], *, model: str, latency_ms: int,
+                  allowed: list[str] | None = None) -> VisionResult:
+    allowed = allowed if allowed is not None else ["*"]
     entries = _normalize_animals(data.get("other_animals"))
-    kept = [sp for sp, _ in entries if not _is_poultry(sp)]
-    folded = sum(n for sp, n in entries if _is_poultry(sp))
-    chickens = _safe_int(data.get("chickens"), 0) + folded
+    chickens = _safe_int(data.get("chickens"), 0)
     confidence = _safe_float(data.get("confidence"), 0.0)
     notes = str(data.get("notes", ""))[:200]
-    if folded:
-        confidence = min(confidence, 0.5)
-        notes = (notes + f" [poultry folded into chickens: +{folded}]")[:200]
+    dropped: list[str] = []
+
+    non_poultry = [sp for sp, _ in entries if not _is_poultry(sp)]
+    poultry = [(sp, n) for sp, n in entries if _is_poultry(sp)]
+    if poultry:
+        if chickens > 0:
+            # Flock split ("2 chickens + 1 rooster" on a 3-bird coop):
+            # fold into the count and mark the frame unreliable (conf
+            # clamp 0.5 -> consumer drops it, waits for a clean frame).
+            folded = sum(n for _, n in poultry)
+            chickens += folded
+            confidence = min(confidence, 0.5)
+            notes = (notes + f" [poultry folded into chickens: +{folded}]")[:200]
+        else:
+            # Phantom poultry on a birdless frame: drop entirely.
+            # Poultry is never a predator, and a lone "duck" on an empty
+            # coop is a hallucination, not a flock split.
+            dropped.extend(sp for sp, _ in poultry)
+
+    kept = non_poultry
+    if "*" not in allowed:
+        kept = [sp for sp in kept if _species_allowed(sp, allowed, dropped)]
+    if dropped:
+        log.warning("dropped implausible species (allowlist=%s): %s",
+                    ",".join(allowed), ",".join(dropped))
     return VisionResult(
         chickens=chickens,
         other_animals=kept,
@@ -185,6 +210,13 @@ def _build_result(data: dict[str, Any], *, model: str, latency_ms: int) -> Visio
         latency_ms=latency_ms,
         raw=data,
     )
+
+
+def _species_allowed(species: str, allowed: list[str], dropped: list[str]) -> bool:
+    if any(a in species for a in allowed):
+        return True
+    dropped.append(species)
+    return False
 
 
 def _normalize_animals(v: Any) -> list[tuple[str, int]]:

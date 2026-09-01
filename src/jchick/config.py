@@ -16,6 +16,13 @@ def _bool(s: str, default: bool = False) -> bool:
     return s.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _species_list(raw: str | None) -> list[str]:
+    """Comma-separated species allowlist; '*' or empty disables filtering."""
+    if raw is None or raw.strip() in ("", "*"):
+        return ["*"]
+    return [s.strip().lower() for s in raw.split(",") if s.strip()]
+
+
 @dataclass(frozen=True)
 class Config:
     # connectivity
@@ -37,6 +44,9 @@ class Config:
     # gating
     diff_threshold: float     # 0..1, mean abs pixel delta required to keep frame
     diff_warmup_frames: int   # always inference the first N frames (no diffing)
+
+    # detection policy
+    allowed_species: list[str]  # other_animals allowlist; ["*"] disables filtering
 
     # publishing
     host: str                 # used in subject prefix home.coop.<host>.*
@@ -67,6 +77,7 @@ class Config:
             synthetic_dir=e.get("JCHICK_SYNTHETIC_DIR", "/var/lib/jchick/synthetic"),
             diff_threshold=float(e.get("JCHICK_DIFF_THRESHOLD", "0.015")),
             diff_warmup_frames=int(e.get("JCHICK_DIFF_WARMUP", "3")),
+            allowed_species=_species_list(e.get("JCHICK_ALLOWED_SPECIES", "human,mouse,mice,rat,rats")),
             host=e.get("JCHICK_HOST", socket.gethostname()),
             heartbeat_seconds=float(e.get("JCHICK_HEARTBEAT_SECONDS", "300")),
             tegrastats_seconds=float(e.get("JCHICK_TEGRASTATS_SECONDS", "60")),
