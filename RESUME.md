@@ -1,34 +1,48 @@
 # RESUME — jetson-pichick
 
-**State (2026-08-31, post-commit):** v0.2.0 deployed to Jetson AND
-committed (f674442 + c3d5703, on main, not pushed). Working tree clean
-apart from this file and the task-plan updates (housekeeping commit).
-Service verified live: PID 324723, empty-coop frames gating correctly
-(chickens=0, conf 0.9, no phantoms).
+**State (2026-09-01 ~01:00 UTC):** v0.2.1 deployed to Jetson and verified
+live (user-approved; PID 612878, startup version=0.2.1, allowlist
+seeded, zero non-chicken species published post-restart, broker
+delivery + wire contract confirmed). v0.2.1 code NOT yet committed —
+working tree holds the 7-file change set (config/ollama/app/env/version
++ PLAN.md + T12 file) plus untracked dusk_watch.log. v0.2.0 is committed
+and pushed (origin/main = d7a2808).
 
-**Session finding (load-bearing):** llava-phi3:3.8b hallucinates any
-animal named in the prompt, even in negation. Never put species words
-in PROMPT (src/jchick/ollama.py comment records the evidence). Poultry
-reclassification lives in code (`_build_result`, conf clamp 0.5).
+**T12 verdict (2026-08-31 dusk, full detail in tasks/T12):** door logic
+PASS (closed correctly on real birds), single-pass PASS, zero-phantom
+FAIL pre-fix. Root cause (corrected during T13): the flock IS visible at
+night; llava-phi3 flickers its classification chicken↔duck↔dog/cat on
+identical black birds. The 23:54 "human" was real (user working).
+Phantom "dog lying in wooden box" = likely a roosting hen misread.
+
+**Load-bearing findings:**
+- Never put species words in PROMPT — model invents them (menu effect,
+  even in negation). Suppression is code-side only.
+- Species allowlist (JCHICK_ALLOWED_SPECIES, default
+  human,mouse,mice,rat,rats) is the shipped fix: implausible species
+  dropped with WARNING; flock-splits fold + clamp 0.5; birdless phantom
+  poultry drops entirely. First live catch within 20 min of restart
+  (model tried "dog" again → dropped).
+- Night counts flicker 2↔3 (identical black birds) — model limit,
+  absorbed by consumer's door-closed count latch; harmless post-close.
 
 **Pending tasks (tasks/PLAN.md, detection-tuning phase):**
-- T12 — dusk verification window (~16:30-19:40 local): watch
-  `nats sub -s nats://192.168.0.151:4222 'home.coop.pichick.>'`;
-  success = zero phantom detection.<species>, correct 3-counts,
-  single-pass latency ~12-13s on fired frames.
-  Task file: tasks/T12_dusk_verification.md
-  Note: consumer stays at CHICKENS_CONFIRM_STREAK=1 (T11 dropped by
-  user decision 2026-08-31) — a single conf≥0.8 phantom during the
-  close window closes the door; zero-phantom is safety-critical.
+- T14 — morning soak check: overnight phantom-species count (expect 0),
+  OOM-kill count, consumer door-open count-reset (~07:15 local opens).
+  Commands: journalctl by current PID + `nats sub` spot check.
 
 **Known issues, deliberately not touched:**
-- Service stop takes ~50s (open MJPEG /stream holds wait_closed);
-  within systemd's 90s TimeoutStop, cosmetic.
-- status.startup publish drops when NATS connect races startup
-  (publisher lossy by design; heartbeat proves liveness).
-- OOM killer killed llama-server once (7GB anon-rss on 7.5GB SoC);
-  auto-recovered ~5s. Keep exactly one model loaded.
+- OOM killer killed llama-server 3×/3 days (~7GB anon-rss, 7.5GB SoC);
+  stock ollama.service auto-recovers in ~65s. Recurring nightly — if it
+  keeps up, look at model memory profile or a smaller gate model.
+- Transient 00:58 UTC ollama blip post-restart (4 alert.ollama, 5s,
+  self-recovered) — same OOM recovery pattern.
+- Service stop ~50s (open MJPEG /stream holds wait_closed); within
+  systemd's 90s TimeoutStop, cosmetic.
+- status.startup publish drops in the NATS connect race (lossy by
+  design; heartbeat at 300s proves liveness).
+- Dev-box .venv/bin/python hangs (~30s+); use /usr/bin/python3 locally
+  and /opt/jchick/.venv/bin/python on the Jetson.
 
-**Next:** T12 at dusk (commands and success criteria in the task file);
-close the phase from its results. All session work committed and
-pushed to origin/main.
+**Next:** T14 in the morning; then commit v0.2.1 (offer pending user
+approval — commit style per git-master: split src vs docs commits).

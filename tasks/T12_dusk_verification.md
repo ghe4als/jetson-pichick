@@ -53,6 +53,67 @@ Then analyze:
 - [ ] Any folded-poultry frames appear as notes containing
       "[poultry folded into chickens" with confidence ≤ 0.5
 
+## Final verdict (2026-09-01 ~01:00 UTC, ground truth from user)
+
+- Happy path PASS: chickens counted on return (3-counts 17:18-17:28
+  local), door closed on real birds, latched correctly.
+- Single-pass PASS: detail latency == gate latency throughout.
+- Zero-phantom FAIL (pre-fix): after dark, 11+ phantom detection events
+  (dog x6, cat x5, fish, pigeon, pig post-close), several at conf 0.9,
+  some self-contradictory ("No animals visible." + dog). User confirmed
+  NO dog exists; coop light is ON. Root cause (corrected — see post-
+  deploy section): the roosting flock IS visible at night; the model
+  intermittently MISCLASSIFIES the birds as other species. The earlier
+  "birds roost out of camera view" claim was my wrong inference from
+  chickens:0 frames and is retracted.
+- The 23:54 human detection was REAL (user was working on the coop) —
+  the model can correctly report a real intruder; suppression must be
+  surgical, not blanket.
+- User requirements: chicken counting is the job; other animals only if
+  real; only plausible intruders in a small coop are human and
+  mice/rats (drawn to feed).
+
+## Follow-up fix built same night (v0.2.1, pending deploy approval)
+
+Species allowlist filter, code-side in _build_result (no prompt change,
+so no menu effect): JCHICK_ALLOWED_SPECIES (default
+human,mouse,mice,rat,rats; '*' disables). Implausible species dropped
+with WARNING log; poultry fold unchanged for flock-splits; birdless
+phantom poultry (e.g. lone "duck" on empty coop) dropped entirely.
+Verified: 11/11 unit scenarios; E2E on live night frames on the Jetson
+(model hallucinated duck+goose -> filter dropped both; flock-split
+duck frame -> folded to 3 at clamped 0.5, matching real bird count).
+Wire effect after deploy: only detection.human / detection.mouse /
+detection.rat-class events can ever publish.
+
+Incident during testing: OOM killer killed llama-server again (~00:50
+UTC, same ~7GB anon-rss pattern); stock ollama.service Restart=always
+recovered it in ~65s. Third occurrence in 3 days - still within
+known-issue tolerance, but recurring nightly.
+
+## Post-deploy verification (v0.2.1 live, 2026-09-01 00:55-01:00 UTC)
+
+- Deploy user-approved 00:55 UTC; service active PID 612878;
+  status.startup version=0.2.1; /etc/jchick/jchick.env seeded with
+  JCHICK_ALLOWED_SPECIES=human,mouse,mice,rat,rats.
+- Root-cause evidence: within ~20 minutes, the SAME closed-coop night
+  scene produced raw "Two black ducks / A duck and a goose" outputs
+  (00:50 E2E), dog/cat/pig reports (00:19-00:38), and clean
+  chickens:2-3 counts at conf 0.85-0.9 (00:56-00:57 post-restart
+  frames). The birds are visible; their classification flickers
+  chicken <-> duck <-> dog/cat. The phantom stream was largely the real
+  flock being misread, not animals invented from an empty view.
+- Filter behavior post-deploy: zero non-chicken detection.* published
+  by the new process; zero species-drop warnings so far (model
+  reporting chickens directly since restart — drop path itself is
+  proven by E2E runs + 11/11 unit scenarios).
+- Counts at night still flicker 2<->3 (identical black birds) — known
+  model limit; consumer CLOSED-latch + hard close absorb it. Post-close
+  3-count frames at conf>=0.85 are published but harmlessly ignored by
+  the consumer's door-closed count latch.
+- Zero tracebacks, zero alert.ollama; single-pass latencies confirmed
+  (gate == detail, ~13-17s).
+
 ## If it fails
 - Phantom species at conf ≥0.8 → the prompt cannot name species to
   suppress them (menu effect — see f674442 commit message); next lever

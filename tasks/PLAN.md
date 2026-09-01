@@ -118,19 +118,31 @@ same-model single-pass) and was verified live on an empty lit coop the
 same day. Remaining work is one observation window.
 
 ## Status (detection tuning)
-Current task: T12 (PENDING — needs dusk window ~16:30-19:40 local)
-Last completed: v0.2.0 producer deploy (empty-coop verified) 2026-08-31
+Current task: T14 (PENDING — morning soak check)
+Last completed: T13 v0.2.1 deploy 2026-09-01 (user-approved, verified
+live — zero phantom species published post-restart)
 
 ## Task list (detection tuning)
-- [ ] T12 — Dusk verification of v0.2.0 detection tuning (observation only)  ⬜ PENDING dusk
+- [x] T12 — Dusk verification of v0.2.0   ✅ DONE 2026-09-01
+      (counts PASS, single-pass PASS, door closed correctly on real
+      birds; zero-phantom FAIL pre-fix: dog/cat/pig/fish phantoms at
+      conf 0.9 after dark, ground truth confirmed no dog, the 23:54
+      human was real, light on, birds roost out of camera view)
+- [x] T13 — Deploy v0.2.1 species-allowlist filter  ✅ DONE 2026-09-01
+      (user-approved; verified: startup v0.2.1 PID 612878, allowlist
+      seeded, zero non-chicken species published post-restart, wire
+      contract intact; post-deploy detail in T12 task file)
+- [ ] T14 — Morning soak check: overnight phantom-species count (expect
+      0), OOM kill count, consumer door-open count-reset          ⬜ PENDING morning
 
 T11 (consumer CHICKENS_CONFIRM_STREAK 1→2) removed 2026-08-31 by user
 decision — consumer behavior stays as-is: the door can still close on a
 single qualifying frame (conf≥0.8, chickens≥3).
 
 ## Blocked
-T12 blocked until the next dusk window (~16:30 local) with chickens
-returning.
+T14 blocked until morning (needs the full overnight journal for
+phantom/OOM counts; door opens ~07:15 local and resets the consumer
+count).
 
 ## Notes (diff-gate fix)
 - Same model throughout: `JCHICK_GATE_MODEL`/`JCHICK_DETAIL_MODEL` stay
