@@ -19,7 +19,7 @@ Last updated: 2026-09-02 ~09:05 (T15 complete)
   prompt_eval_count=926 BOTH arms → fixed-336 letterbox measured, not
   inferred. Live kill #180 observed 07:14:56 at 6.92GB anon-rss, 62 min
   after fresh restart.
-- Local main is AHEAD of origin by 10 commits (2a40104 … fb83341);
+- Local main is AHEAD of origin by 12 commits (2a40104 … 5a73519);
   push ONLY on explicit user request. dusk_watch.log stays untracked.
 
 ## Next actions
