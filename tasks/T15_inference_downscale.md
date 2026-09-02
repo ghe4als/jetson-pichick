@@ -344,6 +344,43 @@ resize re-encode shifts model confidence past the consumer 0.80 gate
 on marginal lit frames -- door-flip risk with streak=1. Chicken
 counting unaffected (78/78 parity).
 
+### Wave 3 — deploy v0.2.2 (recycle-only) + live verification, 2026-09-02
+
+Deploy user-approved (todo 7 gate; scope narrowed to recycle-only per
+post-HALT decision). Flow: rsync (nine excludes) -> install.sh ->
+systemctl restart. Service active 07:59:23, startup line shows
+version 0.2.2.
+
+Check (a) startup 0.2.2: PASS (journal 07:59:23, status.startup).
+Check (b) seeded knobs: PASS (/etc/jchick/jchick.env:
+JCHICK_INFERENCE_MAX_DIM=0, JCHICK_OLLAMA_RECYCLE_RSS_MB=6000 —
+install.sh re-seeded with .bak).
+Check (c) wire contract: publish path byte-identical since v0.2.0
+(git diff c3d5703..HEAD shows only the OllamaClient ctor change;
+_publish_inference untouched; resize disabled at runtime so payload
+bytes = v0.2.1's). Live inference.fired NOT observable this window —
+coop empty after door-open (0 fired, 36 gated — correct empty-coop
+behavior); dusk return will show fired frames.
+Check (d) 60-min window 07:59-08:59, all measured from journal:
+- Kept-frame inferences: 36 (window overlapped active inference; F6
+  satisfied — this was no quiet period)
+- llama-server OOM kills in journalctl -k: ZERO (night baseline ~11/hr)
+- alert.ollama publishes: ZERO
+- Recycle events: TWO — 08:12:05 WARNING "llama-server VmRSS
+  6186MB >= watermark 6000MB" and 08:57:30 at 6123MB; grep line
+  matches the verification spec exactly
+- Inference flowed across BOTH recycles: 08:12:03 gated ->
+  08:12:05 recycle -> 08:12:18 next gated inference 13s later ->
+  08:12:20 DEBUG "no llama-server runner -- expected post-recycle or
+  fresh boot" (designed post-recycle state, no false WARNING);
+  runner RSS after second recycle 5933MB — cycle self-sustaining
+  under production load, no reload approached the 120s timeout
+- Runner RSS trajectory: 4028MB (fresh) -> 5549MB peak -> recycle at
+  6186 -> 5933MB — never above ~6.2GB, ~0.8GB headroom under the
+  historical ~7.0GB kill threshold held all window
+
+All four checks PASS. Rollback knobs remain config-only via redeploy.
+
 ## Next task
 After verdict + deploy + soak handoff: close T15, update PLAN.md; T14
 morning protocol absorbs the overnight soak checks (kill count 0,

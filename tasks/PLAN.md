@@ -183,11 +183,18 @@ leak); the vision encoder letterboxes every input to fixed 336x336 /
 morning soak absorbs this deploy's overnight checks.
 
 ## Status
-Current task: T15 (IN PROGRESS)
+Current task: T15 (DONE — recycle deployed + verified; downscale shipped
+disabled per G4 verdict)
+Last completed: T15 2026-09-02 (v0.2.2 recycle-only deploy, commit
+fb83341+; live-verified: 2 recycle events in first hour, zero OOM
+kills, inference flowing across recycles)
 
 ## Task list
-- [ ] T15 — Watermark recycle (OOM fix) + inference downscale hygiene
-      (v0.2.2; task file: T15_inference_downscale.md)  ⬜ IN PROGRESS
+- [x] T15 — Watermark recycle (OOM fix) + inference downscale hygiene
+      (v0.2.2 deployed recycle-only 2026-09-02; downscale code ships but
+      JCHICK_INFERENCE_MAX_DIM=0 — lit-frame G4 found confidence straddle
+      past the consumer 0.80 gate; task file:
+      T15_inference_downscale.md)  ✅ DONE
 
 ## Blocked
 None.
