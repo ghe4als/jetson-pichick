@@ -235,7 +235,71 @@ tuning, model swap.
   carries the #12283 Tegra memory-accounting fix.
 
 ## Results
-(pending execution — verdict tables + transcripts filed here)
+### Wave 1 (dev box, 2026-09-02)
+
+Interpreter note: `/usr/bin/python3` is 3.9.6; repo venv hangs — plan
+contingency used. Dep precheck initially RED (httpx missing); installed
+`httpx 0.28.1`, `pillow 11.3.0`, `nats-py 2.15.0` via
+`pip3 install --user` per plan. All scenario scripts live in /tmp
+(never committed); transcripts below.
+
+Todo 2 — resize matrix (/tmp/t15_resize_matrix.py): **13/13 green**
+- 1280x720→640x360; 720x1280→360x640; 1280x800→640x400
+- passthrough identity: 640x480, 400x300, 640x640
+- bad bytes → original + WARNING ("resize for inference failed (cannot
+  identify image file …) — sending original bytes")
+- max_dim=0 → original; output valid JPEG; aspect preserved within 1px
+  (1279x719 → 640x360)
+- describe() wiring: payload is 640x360 when enabled; original bytes
+  when disabled (fake httpx captured the /api/chat body)
+
+Todo 3 — recycle matrix (/tmp/t15_recycle_matrix.py): **15/15 green**
+- (a) 7500 ≥ 6000 → body carries keep_alive:0 + WARNING
+- (b) 5500 < 6000 → no keep_alive key, no warning
+- (c1) no-runner → no keep_alive key, DEBUG only ("expected
+  post-recycle or fresh boot"), NO warning
+- (c2) unreadable /proc → rate-limited WARNING once, not twice per 10 min
+- (d) disabled → helper never called; body keys byte-identical
+  {format, messages, model, options, stream}; options unchanged
+- (e) two consecutive over-watermark calls both carry keep_alive:0
+
+Todo 4 — config matrix (/tmp/t15_config_matrix.py): **16/16 green**
+- Both knobs: missing → defaults (640/6000); '320'→320, '5500'→5500;
+  'abc'→640+WARNING, 'xyz'→6000+WARNING; '0'→0 (disabled); ''→default
+- app.py passes both knobs; ctor wiring end-to-end (dim=777, rss=5555)
+- __version__ 0.2.2; pyproject 0.2.2; .env.example documents both knobs
+
+Todo 5 — harness self-test: **GREEN (12/12)**
+- resize 1280x720→640x360; passthrough 400x300
+- slope math MB/min (80.0) and MB/request (8.00)
+- L1 confirmed case (≥ 10 MB/min floor); insufficient-signal case (0.2)
+- null prompt_eval_count tolerated; overflow confound flagged
+  (1900+300 > 2048)
+- G4 pass case 50/50 pairs; straddle surfaced (0.82 vs 0.78 across the
+  0.80 consumer gate); G4 fail case detected (count mismatch)
+- poultry fold via production _build_result (2 + "rooster" → 3 @ conf 0.5)
+
+Product bug found and fixed by the recycle matrix (in-scope):
+`_last_proc_read_warn` initialized to 0.0 suppressed the FIRST
+rate-limited /proc read-failure warning whenever `time.monotonic()` was
+below 600 s — true on a freshly booted Jetson; the fix would have been
+blind on its first post-boot failure. Scenario (c2) caught it; fixed by
+initializing to −1e18 (first failure always warns).
+
+Commit plan deviation (recorded): todos 2+3 landed as one commit 590bf28
+(both ollama.py helper sets were applied in a single edit; splitting
+post-hoc would have required synthetically rewinding the file). Each
+todo's acceptance criteria were verified independently (13/13, 15/15,
+PROMPT/species-guard region untouched — grep verified). Harness
+commit ac7b7bb includes a retry-loop fix found in self-review: a
+`for`-range decrement does not retry in Python; replaced with a
+while-loop ordinal retry.
+
+Wave 1 commits: aeb0a18 (todo 1) · 590bf28 (todos 2+3) · a75f937
+(todo 4) · ac7b7bb (todo 5)
+
+Wave 2 (Jetson harness) — pending user gate; verdict tables filed here
+after the run.
 
 ## Next task
 After verdict + deploy + soak handoff: close T15, update PLAN.md; T14
