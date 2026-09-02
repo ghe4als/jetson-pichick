@@ -73,18 +73,22 @@ def log(msg: str) -> None:
 def parse_env_file(path: Path) -> dict:
     env = {}
     try:
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            env[k.strip()] = v.strip().strip('"').strip("'")
-    except OSError:
-        pass
+        text = path.read_text()
+    except OSError as e:
+        # Root-owned on the box (mode 600) - expected when run as pichick.
+        # Distinguish "unreadable" from "key absent" so the failure is
+        # diagnosable; caller should pass --model/--base-url explicitly.
+        print(f"[harness] WARNING: cannot read {path} ({e}) - "
+              f"reading knobs from defaults; pass --model explicitly "
+              f"(the seeded value is visible via: sudo cat {path})")
+        return env
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        env[k.strip()] = v.strip().strip('"').strip("'")
     return env
-
-
-# ---- llama-server observation -------------------------------------------
 
 
 def llama_pids() -> list[int]:
@@ -412,7 +416,7 @@ def abort(reason: str) -> None:
     sys.exit(3)
 
 
-def online(base_url: str, model: str, env: dict) -> int:
+def online(base_url: str, model: str, env: dict, max_frames: int = 3) -> int:
     t_start = time.monotonic()
 
     log(f"base_url={base_url} model={model}")
@@ -441,10 +445,10 @@ def online(base_url: str, model: str, env: dict) -> int:
     log(f"post-warmup anchor pids={sorted(anchor)} VmRSS={rss}MB "
         f"RssAnon={anon}MB VmSwap={swap}MB")
 
-    # ---- frames: up to 3 distinct grabs ~30 s apart ----
+    # ---- frames: up to max_frames distinct grabs ~30 s apart ----
     frames = [warmup_frame]
     frame_times = [time.strftime("%H:%M:%S")]
-    while len(frames) < 3:
+    while len(frames) < max_frames:
         time.sleep(30)
         try:
             frames.append(grab_frame(device, width, height))
@@ -453,6 +457,7 @@ def online(base_url: str, model: str, env: dict) -> int:
         except RuntimeError as e:
             log(f"frame grab {len(frames)} failed ({e}) - continuing with {len(frames)}")
             break
+
     log(f"distinct frames: {len(frames)} grabbed at {frame_times} "
         "(empty frames give trivial 0=0 parity - noted)")
 
@@ -561,7 +566,6 @@ def online(base_url: str, model: str, env: dict) -> int:
     log(f"done in {(time.monotonic() - t_start) / 60:.1f} min")
     return 0
 
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--self-test", action="store_true",
@@ -570,6 +574,9 @@ def main() -> int:
                     help="Ollama base URL (default: OLLAMA_URL from env file)")
     ap.add_argument("--model", default=None,
                     help="model tag (default: JCHICK_DETAIL_MODEL from env file)")
+    ap.add_argument("--max-frames", type=int, default=3,
+                    help="distinct frame grabs ~30 s apart (plan default 3; "
+                         "extend toward 6 when frames are mostly empty)")
     args = ap.parse_args()
 
     if args.self_test:
@@ -577,7 +584,12 @@ def main() -> int:
 
     env = parse_env_file(ENV_FILE)
     base_url = args.base_url or env.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-    model = args.model or env.get("JCHICK_DETAIL_MODEL")
+    if args.model:
+        model = args.model
+        model_src = "--model argument"
+    else:
+        model = env.get("JCHICK_DETAIL_MODEL")
+        model_src = f"{ENV_FILE}: JCHICK_DETAIL_MODEL"
     if not model:
         abort("no model: JCHICK_DETAIL_MODEL absent from /etc/jchick/jchick.env "
               "and no --model given")
@@ -586,8 +598,9 @@ def main() -> int:
         print(f"[harness] ollama -v: {v.stdout.decode().strip() or v.stderr.decode().strip()}")
     except Exception as e:
         print(f"[harness] ollama -v unavailable: {e}")
-    print(f"[harness] active model: {model} (from {ENV_FILE}: JCHICK_DETAIL_MODEL)")
-    return online(base_url, model, env)
+    print(f"[harness] active model: {model} (from {model_src})")
+    return online(base_url, model, env, max_frames=args.max_frames)
+
 
 
 if __name__ == "__main__":
