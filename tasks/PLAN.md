@@ -165,3 +165,29 @@ count).
 - Keeping `assets/gate_prompt_debiased.txt` and the shipped `PROMPT` in
   sync (T10 adds a Python equality check) is what makes future harness
   runs representative of the live prompt.
+
+---
+
+# Inference downscale + llama-server OOM fix — 2026-09-02
+
+## Goal
+Stop the nightly llama-server OOM-kill loop with a watermark-triggered
+runner recycle (keep_alive: 0 at VmRSS >= 6000 MB) and ship 640-px
+inference downscale as payload hygiene. Ships as v0.2.2.
+
+## Context
+Plan: .omo/plans/inference-downscale.md (dual-approved round-2,
+2026-09-01). The leak matches ollama#18106 (per-request anonymous
+leak); the vision encoder letterboxes every input to fixed 336x336 /
+576 tokens, so downscale is hygiene and recycle is the fix. T14's
+morning soak absorbs this deploy's overnight checks.
+
+## Status
+Current task: T15 (IN PROGRESS)
+
+## Task list
+- [ ] T15 — Watermark recycle (OOM fix) + inference downscale hygiene
+      (v0.2.2; task file: T15_inference_downscale.md)  ⬜ IN PROGRESS
+
+## Blocked
+None.
