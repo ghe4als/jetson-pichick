@@ -297,9 +297,45 @@ while-loop ordinal retry.
 
 Wave 1 commits: aeb0a18 (todo 1) · 590bf28 (todos 2+3) · a75f937
 (todo 4) · ac7b7bb (todo 5)
+Wave 2 (Jetson harness) — verdict recorded 2026-09-02 (two runs):
 
-Wave 2 (Jetson harness) — pending user gate; verdict tables filed here
-after the run.
+Run 1 (06:05, dark frames): L1 CONFIRMED (VmRSS 4.0->5.7 GB over 7.5
+min, no release; slope inflated by distinct-frame growth steps —
+production never plateaus, frames always distinct). prompt_eval_count
+926 BOTH arms (576 vision tokens + ~350 prompt) — fixed-336 letterbox
+now MEASURED on-box: full-res and 640-px produce identical token
+counts. G4 trivially passed (all frames dark, 0=0 conf 1.000). G2
+reported "IMPROVED" (resized slope lower) — artifact of arm ordering
+(plateau vs growth phase), not trusted as a byte-effect claim.
+
+Run 2 (07:15, lit coop after 07:10 light-on; 6 frames with birds
+visible, chickens 1-2 per frame): L1 CONFIRMED (4.0->6.2 GB, full1
+slope 756 MB/min; resized arm ran into swap at 1.8 GB VmSwap — no PID
+change, no abort). G4 FAIL 52/78 pairs:
+- Chickens parity PERFECT (identical counts on all 78 pairs)
+- Confidence shift on 2/6 frames, deterministic per arm (5 identical
+  repeats/frame): f0 full 0.750 vs resized 0.900; f4 full 0.570 vs
+  resized 0.900
+- Both straddles cross the consumer 0.80 gate UPWARD (resize raises
+  conf past the gate; full-res stays below) — door-flip risk on
+  3-count frames (CHICKENS_CONFIRM_STREAK=1 latches all_home on a
+  single qualifying frame)
+- Not memory-pressure-driven: same frame, same conf at 6.2 GB and
+  6.8 GB RSS within the resized arm
+
+Live corroboration: kernel OOM-killed llama-server at 07:14:56
+(kill #180, anon-rss 6.92 GB, 62 min after fresh ollama restart) —
+observed in-session, journalctl -k.
+
+Box facts: ollama -v AND /api/version both report 0.0.0 (stripped
+build) — version caveat (#12283 fix >= 0.12.4-rc6) NOT verifiable
+on-box. jetson-pichick stop needed SIGKILL at 07:15 (stop-sigterm
+timed out 90s with an inference call in flight; pre-existing service
+property, unrelated to v0.2.2 changes, noted for deploy restarts).
+
+VERDICT MATRIX: L1 confirmed + G4 fail -> HALT. Downscale deploy is a
+user decision (recycle-only default). Harness transcripts: full
+per-call tables in session artifacts (45 measured calls each run).
 
 ## Next task
 After verdict + deploy + soak handoff: close T15, update PLAN.md; T14
