@@ -69,7 +69,12 @@ class App:
             threshold=cfg.diff_threshold,
             warmup=cfg.diff_warmup_frames,
         )
-        self._client = OllamaClient(cfg.ollama_url, allowed_species=cfg.allowed_species)
+        self._client = OllamaClient(
+            cfg.ollama_url,
+            allowed_species=cfg.allowed_species,
+            max_image_dim=cfg.inference_max_dim,
+            recycle_rss_mb=cfg.recycle_rss_mb,
+        )
         self._cascade = Cascade(
             self._client,
             gate_model=cfg.gate_model,

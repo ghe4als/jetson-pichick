@@ -5,15 +5,36 @@ OLLAMA_URL: those must point at real services or the app refuses to start.
 """
 from __future__ import annotations
 
+import logging
 import os
 import socket
 from dataclasses import dataclass
 
+log = logging.getLogger(__name__)
 
 def _bool(s: str, default: bool = False) -> bool:
     if s is None or s == "":
         return default
     return s.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_int(e: dict, name: str, default: int) -> int:
+    """Parse an int env knob from the env mapping; invalid values fall
+    back to the default with a WARNING instead of crashing config load.
+
+    Deliberate divergence from the older int() knobs above: a typo'd knob
+    must not blind the coop -- a loadable config with a safe default
+    beats a dead service (install.sh re-seeds the box env from
+    .env.example, so the value is operator-controlled).
+    """
+    raw = e.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        log.warning("invalid %s=%r - using default %d", name, raw, default)
+        return default
 
 
 def _species_list(raw: str | None) -> list[str]:
@@ -56,6 +77,10 @@ class Config:
     # web viewer
     http_port: int            # 0 = disabled; 8090 = default stream port
 
+    # inference payload + ollama runner health (v0.2.2)
+    inference_max_dim: int    # 0 = disabled; longest-side cap before base64
+    recycle_rss_mb: int        # 0 = disabled; keep_alive:0 recycle watermark
+
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
         e = env if env is not None else os.environ
@@ -82,7 +107,10 @@ class Config:
             heartbeat_seconds=float(e.get("JCHICK_HEARTBEAT_SECONDS", "300")),
             tegrastats_seconds=float(e.get("JCHICK_TEGRASTATS_SECONDS", "60")),
             http_port=int(e.get("JCHICK_HTTP_PORT", "0")),
+            inference_max_dim=_env_int(e, "JCHICK_INFERENCE_MAX_DIM", 640),
+            recycle_rss_mb=_env_int(e, "JCHICK_OLLAMA_RECYCLE_RSS_MB", 6000),
         )
+
 
     def subject(self, suffix: str) -> str:
         return f"home.coop.{self.host}.{suffix}"

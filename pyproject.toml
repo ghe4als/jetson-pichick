@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jetson-pichick"
-version = "0.1.0"
+version = "0.2.2"
 description = "Jetson Orin chicken-cam node: continuous capture + cascaded vision LLM + NATS publish"
 requires-python = ">=3.10"
 dependencies = [
