@@ -337,6 +337,13 @@ VERDICT MATRIX: L1 confirmed + G4 fail -> HALT. Downscale deploy is a
 user decision (recycle-only default). Harness transcripts: full
 per-call tables in session artifacts (45 measured calls each run).
 
+USER DECISION (2026-09-02, post-HALT): recycle-only deploy. Downscale
+code ships but JCHICK_INFERENCE_MAX_DIM=0 in .env.example (disabled at
+runtime; config-only re-enable via redeploy). G4 evidence basis: the
+resize re-encode shifts model confidence past the consumer 0.80 gate
+on marginal lit frames -- door-flip risk with streak=1. Chicken
+counting unaffected (78/78 parity).
+
 ## Next task
 After verdict + deploy + soak handoff: close T15, update PLAN.md; T14
 morning protocol absorbs the overnight soak checks (kill count 0,
