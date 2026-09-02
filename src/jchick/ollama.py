@@ -12,10 +12,14 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import subprocess
+import time
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Any
 
 import httpx
+from PIL import Image
 
 log = logging.getLogger(__name__)
 
@@ -70,17 +74,156 @@ class OllamaError(RuntimeError):
     pass
 
 
+_PROC_READ_WARN_INTERVAL = 600.0  # seconds between /proc read-failure WARNINGS
+_last_proc_read_warn = -1e18  # -inf: first failure always warns even if monotonic clock is small
+
+
+def _warn_proc_read_failure(msg: str) -> None:
+    """Rate-limited WARNING for llama-server /proc read failures.
+
+    A real read failure means the recycle fix is blind, so it must be
+    visible -- but per-call spam is worse than the disease.
+    """
+    global _last_proc_read_warn
+    now = time.monotonic()
+    if now - _last_proc_read_warn >= _PROC_READ_WARN_INTERVAL:
+        _last_proc_read_warn = now
+        log.warning(msg)
+
+
+def _llama_server_rss_mb() -> int | None:
+    """Max VmRSS (MB) across llama-server processes; None if no runner
+    or unreadable (differentiated logging -- see below).
+
+    The llama.cpp runner leaks anonymous memory per request (ollama#18106);
+    the kernel OOM-kills it at ~7GB on this box (179 kills since Aug 20).
+    We read VmRSS before each call so we can recycle the runner
+    (keep_alive: 0) BEFORE the kernel does it for us.
+
+    Returns None when: no runner is alive (DEBUG log -- the expected
+    state right after a recycle or at fresh boot; a WARNING here would
+    cry wolf in the alarm path the post-deploy verification greps), or
+    when a runner exists but /proc is unreadable (rate-limited WARNING
+    via _warn_proc_read_failure -- the fix is blind and must say so).
+    """
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-f", "llama-server"],
+            capture_output=True, timeout=10,
+        )
+    except Exception as e:
+        _warn_proc_read_failure(f"pgrep failed: {e}")
+        return None
+    if proc.returncode != 0 or not proc.stdout:
+        # pgrep exit 1 = no match: no runner is alive right now. That is
+        # the EXPECTED state immediately after a keep_alive:0 recycle
+        # (runner has exited) and at every fresh start, so DEBUG, not
+        # WARNING -- this path must not cry wolf in the alarm path the
+        # post-deploy verification greps.
+        log.debug("no llama-server runner -- expected post-recycle or fresh boot")
+        return None
+    try:
+        pids = [int(p) for p in proc.stdout.split()]
+    except ValueError:
+        _warn_proc_read_failure("pgrep output not parseable as PIDs")
+        return None
+    if not pids:
+        log.debug("no llama-server runner -- expected post-recycle or fresh boot")
+        return None
+    # Read each runner's VmRSS; take the max (conservative: a small
+    # false pgrep match never triggers; a big one triggers a harmless
+    # early recycle).
+    max_rss_kb = -1
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/status", encoding="ascii", errors="replace") as fh:
+                for line in fh:
+                    if line.startswith("VmRSS:"):
+                        max_rss_kb = max(max_rss_kb, int(line.split()[1]))
+                        break
+        except Exception:
+            continue  # unreadable pid: try the next
+    if max_rss_kb < 0:
+        _warn_proc_read_failure("no llama-server /proc/status read succeeded")
+        return None
+    return max_rss_kb // 1024
+
+
+def _resize_for_inference(jpeg: bytes, max_dim: int) -> bytes:
+    """Downscale JPEG so its longest side <= max_dim before sending to Ollama.
+
+    Why: payload hygiene only (~4x smaller base64, faster server decode).
+    The llava-phi3 vision tower letterboxes EVERY input to fixed 336x336
+    (576 vision tokens constant -- verified from the mmproj GGUF), so this
+    does NOT cut vision tokens or per-call vision memory. The OOM fix is
+    the llama-server watermark recycle, not this. A/B evidence: tasks/T15.
+    Returns ORIGINAL bytes if max_dim <= 0, the image is already small
+    enough, or anything goes wrong (degraded inference beats none).
+    """
+    if max_dim <= 0:
+        return jpeg
+    try:
+        with Image.open(BytesIO(jpeg)) as im:
+            w, h = im.size
+            if max(w, h) <= max_dim:
+                return jpeg  # no upscale; also protects small crops
+            scale = max_dim / max(w, h)
+            resized = im.resize(
+                (max(1, round(w * scale)), max(1, round(h * scale))),
+                Image.Resampling.LANCZOS,
+            )
+            buf = BytesIO()
+            # JPEG source: keep RGB; palette/alpha JPEGs are not a thing.
+            resized = resized.convert("RGB") if resized.mode != "RGB" else resized
+            resized.save(buf, format="JPEG", quality=85)
+            return buf.getvalue()
+    except Exception as e:
+        log.warning("resize for inference failed (%s) - sending original bytes", e)
+        return jpeg
+
+
+
 class OllamaClient:
     def __init__(self, base_url: str, *, timeout: float = 120.0,
-                 allowed_species: list[str] | None = None) -> None:
+                 allowed_species: list[str] | None = None,
+                 max_image_dim: int = 0,
+                 recycle_rss_mb: int = 0) -> None:
         self._base = base_url.rstrip("/")
         self._timeout = timeout
         self._allowed = allowed_species if allowed_species is not None else ["*"]
+        self.max_image_dim = max_image_dim
+        self.recycle_rss_mb = recycle_rss_mb
 
     async def describe(self, jpeg: bytes, *, model: str) -> VisionResult:
+        # Payload hygiene: shrink the JPEG before base64 so the Ollama
+        # HTTP payload is ~4x smaller. The vision encoder letterboxes
+        # every input to a fixed 336x336 canvas (576 vision tokens
+        # constant), so this costs essentially nothing in model input
+        # quality while cutting decode/base64/HTTP buffers.
+        # Sync PIL work in an async method: ms-scale, accepted (the
+        # sync diff-gate evaluate in the same loop is heavier).
+        if self.max_image_dim > 0:
+            jpeg = _resize_for_inference(jpeg, self.max_image_dim)
         b64 = base64.b64encode(jpeg).decode("ascii")
         allowed = self._allowed
-        
+
+        # Recycle check: read llama-server's VmRSS before each call so
+        # we can unload the runner via keep_alive: 0 BEFORE the kernel
+        # OOM-kills it (ollama#18106: ~5-12 MiB/request anonymous leak,
+        # 179 kills at ~7 GB on this box since Aug 20). pgrep + /proc
+        # reads are ms-scale sync calls, same accepted cost as above.
+        keep_alive_0 = False
+        if self.recycle_rss_mb > 0:
+            rss = _llama_server_rss_mb()
+            if rss is not None and rss >= self.recycle_rss_mb:
+                keep_alive_0 = True
+                log.warning(
+                    "llama-server VmRSS %dMB >= watermark %dMB - "
+                    "recycling runner after this call (next inference "
+                    "pays model reload)",
+                    rss, self.recycle_rss_mb,
+                )
+
         # Use /api/chat endpoint which properly supports format=json
         body = {
             "model": model,
@@ -96,7 +239,11 @@ class OllamaClient:
                 "num_ctx": 2048,
             },
         }
-        
+        if keep_alive_0:
+            # Top-level /api/chat parameter: the server unloads the
+            # runner after serving this response (#18106 workaround).
+            body["keep_alive"] = 0
+
         url = f"{self._base}/api/chat"
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
