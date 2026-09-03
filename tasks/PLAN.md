@@ -223,11 +223,19 @@ extracts movement only into a 16-char log buffer, no branching
 (coop_door_controller/src/nats_integration.c:359-371).
 
 ## Status
-Current task: T16 (IN PROGRESS)
-Last completed: T14 2026-09-03
+Current task: none — T16 done, phase closed
+Last completed: T16 2026-09-03 (v0.2.3 deployed 07:43, live-verified:
+warmup sentinel 1.0 -> "agitated", real frame 0.0126 -> "still" per
+band table; HAR passed all 7 contracts pre-deploy; commit cf53066)
 
 ## Task list
-- [ ] T16 — Movement label derived from measured diff_score  ⬜ IN PROGRESS
+- [x] T16 — Movement label derived from measured diff_score  ✅ DONE
+      2026-09-03 (v0.2.3; movement_label() in diff.py bands
+      <0.030 still / <0.080 calm / <0.150 active / >=0.150 agitated;
+      applied in _publish_inference for gate+detail, passed to MJPEG
+      HUD; HAR: all 7 contracts PASS incl. both wire sides cited;
+      deployed + live-verified via warmup frame and manual trigger;
+      task file: T16_movement_from_diff.md)
 - [ ] T17 — Block-wise motion metric (NOT SCHEDULED — user decision;
       changes what diff_score means, needs its own live tuning window)
 

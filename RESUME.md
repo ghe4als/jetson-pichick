@@ -1,35 +1,35 @@
 # RESUME — jetson-pichick
 
-Last updated: 2026-09-03 ~07:20 (T14 complete; repo pushed)
+Last updated: 2026-09-03 ~07:50 (T16 complete; v0.2.3 live)
 
 ## Current state
-- v0.2.2 LIVE on the Jetson (deployed 07:59 2026-09-02, recycle-only):
-  llama-server watermark recycle (JCHICK_OLLAMA_RECYCLE_RSS_MB=6000)
-  is the OOM fix — live-verified by the T14 overnight soak
-  (2026-09-02 07:30 → 2026-09-03 07:16): 22 recycle events, all during
-  inference; recycle→next-inference-completion 12.6-15.9s (no reload
-  stall >120s); kernel OOM kills 0 (baseline 10-28/day); phantom
-  species 0; alert.ollama 0; inference errors 0; service active.
-  Door-open window (~07:15) fired chickens:3 conf 0.9 — top-level
-  chickens serializes FIRST, payload v0.2.1-identical (wire contract
-  verified from journal publish lines).
-- Inference downscale (JCHICK_INFERENCE_MAX_DIM) SHIPS DISABLED (=0):
-  on-box G4 found the 640-px re-encode pushes model confidence past the
-  consumer's 0.80 gate on marginal lit frames (0.75→0.90, 0.57→0.90) —
-  door-flip risk with CHICKENS_CONFIRM_STREAK=1. User decision
-  2026-09-02. Chicken counts were unaffected (78/78 parity). Re-enable
-  only via .env.example + redeploy.
-- Harness evidence (tasks/T15): L1 leak confirmed on-box (both runs);
-  prompt_eval_count=926 BOTH arms → fixed-336 letterbox measured, not
-  inferred. Live kill #180 observed 07:14:56 at 6.92GB anon-rss, 62 min
-  after fresh restart.
-- Git: local main == origin/main at 59df91e (pushed 2026-09-03 on user
-  request). dusk_watch.log stays untracked.
+- v0.2.3 LIVE on the Jetson (deployed 07:43 2026-09-03, commit cf53066):
+  movement label in inference.gated/fired payloads is now DERIVED from
+  the measured diff_score (jchick.diff.movement_label) instead of the
+  VLM's frozen-frame guess. Bands: <0.030 still / <0.080 calm /
+  <0.150 active / >=0.150 agitated (grounded in the 2026-08-31→09-03
+  journal review; VLM label was uninformative — still/calm distributions
+  near-identical, n=252). MJPEG HUD shows the same derived label.
+- HAR (High Accuracy Review) passed pre-deploy: all 7 contracts (wire
+  order, key order, totality, HUD consistency, gate untouched, no
+  semantic drift, version) with both wire sides cited — consumer parses
+  chickens order-independently, movement is log-only, no branching.
+- Live verification on-box post-deploy: warmup sentinel diff_score 1.0
+  -> movement "agitated"; manual-trigger frame 0.0126 -> "still";
+  service active, 0 errors/alerts post-restart; subjects flowing.
+- v0.2.2 OOM fix still live and holding: 22 recycle events in the T14
+  overnight soak, zero OOM kills, no reload stalls (T14 closed PASS).
+- T17 (block-wise motion metric) captured in tasks/T17 — NOT scheduled;
+  needs user decision + its own live tuning window (changes what
+  diff_score means; JCHICK_DIFF_THRESHOLD=0.012 is tuned on the current
+  mean-abs scale).
+- Git: dusk_watch.log stays untracked.
 
 ## Next actions
 - None pending. All phases closed: MJPEG (T01-T05), diff-gate fix
   (T06-T10), detection tuning (T12-T14), inference downscale + OOM fix
-  (T15). Watch-list items only (not tasks):
+  (T15), movement label from diff (T16). Optional T17 captured but NOT
+  scheduled. Watch-list items only (not tasks):
   - ollama upstream: #18106, #18099 (our T14 soak data = useful data
     point for the per-request anonymous-leak issue).
   - Remaining levers if recycle proves insufficient over longer soaks:
@@ -41,5 +41,6 @@ Last updated: 2026-09-03 ~07:20 (T14 complete; repo pushed)
     pre-existing, expect it on future restarts).
 
 ## Task index
-- tasks/PLAN.md — all phases closed, T14 done 2026-09-03
+- tasks/PLAN.md — all phases closed; T14 + T16 done 2026-09-03
+- tasks/T16_movement_from_diff.md — band evidence + HAR record
 - tasks/T15_inference_downscale.md — full evidence trail + transcripts
