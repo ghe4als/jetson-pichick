@@ -201,5 +201,35 @@ kills, inference flowing across recycles)
       past the consumer 0.80 gate; task file:
       T15_inference_downscale.md)  ✅ DONE
 
+
+---
+
+# Movement label from measured diff — 2026-09-03
+
+## Goal
+Replace the VLM's per-frame movement guess (uninformative: still/calm
+diff_score distributions near-identical, n=252 on-box) with a
+deterministic label derived from the measured diff_score — the real
+motion signal already in every payload. Ships as v0.2.3.
+
+## Context
+User request 2026-09-03. Frame-difference is the standard fixed-camera
+motion-detection method (Springer 2024 two-frame differencing;
+arXiv:2503.09132 frame differences as motion cues; SAGE 2018 block-wise
+frame difference; ACM TOMM joint diff+background). Bands grounded in the
+same on-box journal review: real dusk bird motion 0.012-0.093, dusk
+light-shift outlier 0.173, warmup sentinel 1.0. Wire-safe: consumer
+extracts movement only into a 16-char log buffer, no branching
+(coop_door_controller/src/nats_integration.c:359-371).
+
+## Status
+Current task: T16 (IN PROGRESS)
+Last completed: T14 2026-09-03
+
+## Task list
+- [ ] T16 — Movement label derived from measured diff_score  ⬜ IN PROGRESS
+- [ ] T17 — Block-wise motion metric (NOT SCHEDULED — user decision;
+      changes what diff_score means, needs its own live tuning window)
+
 ## Blocked
 None.

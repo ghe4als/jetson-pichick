@@ -28,7 +28,7 @@ from . import __version__
 from .capture import make_source
 from .cascade import Cascade, CascadeResult
 from .config import Config
-from .diff import FrameDiffGate
+from .diff import FrameDiffGate, movement_label
 from .mjpeg_server import MJPEGServer
 from .nats_pub import NatsPublisher
 from .ollama import OllamaClient, OllamaError
@@ -150,7 +150,10 @@ class App:
                 if result.fired:
                     self._frames_fired += 1
                 if self._mjpeg is not None:
-                    self._mjpeg.update_last_result(result, diff_score=score)
+                    self._mjpeg.update_last_result(
+                        result, diff_score=score,
+                        movement=movement_label(score),
+                    )
                     self._mjpeg.update_counters(
                         seen=self._frames_seen,
                         inferenced=self._frames_inferenced,
@@ -240,10 +243,15 @@ class App:
     async def _publish_inference(self, r: CascadeResult, *, diff_score: float) -> None:
         chosen = r.detail or r.gate
         self._last_chickens = chosen.chickens
+        # Movement is a measured property of the frame pair, not a VLM
+        # guess from a frozen image: derive it from diff_score so the
+        # label matches what actually moved. The VLM label was
+        # uninformative (see tasks/T16 for distribution evidence).
+        movement = movement_label(diff_score)
         gate_payload = {
             "chickens": r.gate.chickens,
             "other_animals": r.gate.other_animals,
-            "movement": r.gate.movement,
+            "movement": movement,
             "confidence": r.gate.confidence,
             "model": r.gate.model,
             "latency_ms": r.gate.latency_ms,
@@ -259,7 +267,7 @@ class App:
             detail_payload = {
                 "chickens": r.detail.chickens,
                 "other_animals": r.detail.other_animals,
-                "movement": r.detail.movement,
+                "movement": movement,
                 "confidence": r.detail.confidence,
                 "notes": r.detail.notes,
                 "model": r.detail.model,

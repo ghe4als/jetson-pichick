@@ -50,3 +50,27 @@ def _mean_abs_diff(a: list[int], b: list[int]) -> float:
     for x, y in zip(a, b):
         total += abs(x - y)
     return (total / n) / 255.0
+
+# ---- movement label bands ---------------------------------------
+# The published movement label comes from the measured diff score,
+# not the VLM: a single frozen frame cannot show motion (the gate
+# prompt even forces "still" on empty frames), while the diff gate
+# is the real motion detector (see cascade.py). Bands grounded in
+# the on-box journal review 2026-08-31 -> 2026-09-03 (tasks/T16):
+# real dusk bird motion 0.012-0.093, dusk light-shift outlier 0.173,
+# warmup sentinel 1.0.
+#   score < 0.030          -> "still"    (smallest real motion)
+#   0.030..0.080           -> "calm"     (bulk of observed motion)
+#   0.080..0.150           -> "active"   (substantial motion)
+#   score >= 0.150         -> "agitated" (scene-scale change)
+
+
+def movement_label(score: float) -> str:
+    """Map a diff score (0..1) to a movement label. Total over [0, 1]."""
+    if score < 0.030:
+        return "still"
+    if score < 0.080:
+        return "calm"
+    if score < 0.150:
+        return "active"
+    return "agitated"

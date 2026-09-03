@@ -85,18 +85,22 @@ class MJPEGServer:
         """
         self._last_jpeg = jpeg
 
-    def update_last_result(self, result: Any, *, diff_score: float) -> None:
+    def update_last_result(self, result: Any, *, diff_score: float,
+                           movement: str | None = None) -> None:
         """Called by the inference loop after each cascade.run().
 
         `result` is a CascadeResult (from src/jchick/cascade.py). We pull
         the chosen result (detail if fired, else gate) and stash the
-        fields the overlay needs.
+        fields the overlay needs. `movement` is the label derived from
+        the measured diff score (jchick.diff.movement_label) — the VLM's
+        own movement guess is uninformative; app.py passes the measured
+        label so the HUD matches the published payload.
         """
         chosen = result.detail or result.gate
         self._last = LastResult(
             chickens=chosen.chickens,
             other_animals=list(chosen.other_animals),
-            movement=chosen.movement,
+            movement=movement if movement is not None else chosen.movement,
             confidence=chosen.confidence,
             notes=chosen.notes,
             model=chosen.model,
