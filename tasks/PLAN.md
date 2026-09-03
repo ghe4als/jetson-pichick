@@ -118,13 +118,14 @@ same-model single-pass) and was verified live on an empty lit coop the
 same day. Remaining work is one observation window.
 
 ## Status (detection tuning)
-Current task: T14 (PENDING — morning soak check)
-Last completed: T13 v0.2.1 deploy 2026-09-01 (user-approved, verified
-live — zero phantom species published post-restart)
+Current task: none — T14 done, phase closed
+Last completed: T14 morning soak 2026-09-03 (verified live on-box:
+phantom species 0, OOM kills 0 overnight, 22 recycles with no reload
+stall, service active; committed 59df91e+)
 
 ## Task list (detection tuning)
 - [x] T12 — Dusk verification of v0.2.0   ✅ DONE 2026-09-01
-      (counts PASS, single-pass PASS, door closed correctly on real
+      (counts PASS, single-pass PASS, box closed correctly on real
       birds; zero-phantom FAIL pre-fix: dog/cat/pig/fish phantoms at
       conf 0.9 after dark, ground truth confirmed no dog, the 23:54
       human was real, light on, birds roost out of camera view)
@@ -132,17 +133,21 @@ live — zero phantom species published post-restart)
       (user-approved; verified: startup v0.2.1 PID 612878, allowlist
       seeded, zero non-chicken species published post-restart, wire
       contract intact; post-deploy detail in T12 task file)
-- [ ] T14 — Morning soak check: overnight phantom-species count (expect
-      0), OOM kill count, consumer door-open count-reset          ⬜ PENDING morning
+- [x] T14 — Morning soak check  ✅ DONE 2026-09-03 (verified on-box over
+      the full 2026-09-02→09-03 overnight journal: phantom species 0
+      (expect 0); kernel OOM kills 0 (baseline 10-28/day); 22 recycle
+      events, all during inference — recycle→next-inference-completion
+      12.6-15.9s, no reload stall >120s; overnight alert.ollama 0,
+      inference errors 0; service active; door-open window fired with
+      chickens:3 conf 0.9, top-level chickens serializes FIRST and
+      payload v0.2.1-identical)
 
 T11 (consumer CHICKENS_CONFIRM_STREAK 1→2) removed 2026-08-31 by user
 decision — consumer behavior stays as-is: the door can still close on a
 single qualifying frame (conf≥0.8, chickens≥3).
 
 ## Blocked
-T14 blocked until morning (needs the full overnight journal for
-phantom/OOM counts; door opens ~07:15 local and resets the consumer
-count).
+None.
 
 ## Notes (diff-gate fix)
 - Same model throughout: `JCHICK_GATE_MODEL`/`JCHICK_DETAIL_MODEL` stay
