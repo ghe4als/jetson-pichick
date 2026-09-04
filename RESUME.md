@@ -1,6 +1,6 @@
 # RESUME — jetson-pichick
 
-Last updated: 2026-09-03 ~07:50 (T16 complete; v0.2.3 live)
+Last updated: 2026-09-03 ~08:25 (T45 design written — cross-repo)
 
 ## Current state
 - v0.2.3 LIVE on the Jetson (deployed 07:43 2026-09-03, commit cf53066):
@@ -23,10 +23,21 @@ Last updated: 2026-09-03 ~07:50 (T16 complete; v0.2.3 live)
   needs user decision + its own live tuning window (changes what
   diff_score means; JCHICK_DIFF_THRESHOLD=0.012 is tuned on the current
   mean-abs scale).
+- Cross-repo: consumer light-scheduling design (T45) lives in
+  ../coop_door_controller/.opencode/plans/T45_powersave_close_light_off.md
+  — powersave light off 20 min after door close; DESIGN ONLY, not
+  scheduled; 2 decision points await the user (close-only 20 vs
+  all-windows 20; override holds to window-end vs morning). Consumer
+  PLAN.md status row updated to point at it.
 - Git: dusk_watch.log stays untracked.
 
 ## Next actions
-- None pending. All phases closed: MJPEG (T01-T05), diff-gate fix
+- Cross-repo T45 (powersave light close-off) awaits your 2 decisions:
+  close-only-20 vs all-windows-20, and override-to-window-end vs
+  override-to-morning. Design: ../coop_door_controller/.opencode/plans/
+  T45_powersave_close_light_off.md. Execution needs an OTA/USB flash
+  plan for the ESP32.
+- Repo-local phases all closed: MJPEG (T01-T05), diff-gate fix
   (T06-T10), detection tuning (T12-T14), inference downscale + OOM fix
   (T15), movement label from diff (T16). Optional T17 captured but NOT
   scheduled. Watch-list items only (not tasks):
